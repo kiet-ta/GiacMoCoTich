@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://dki6qyd8lvpvf"]
+
+[ext_resource type="Script" uid="uid://cuib24ia3x63" path="res://scripts/GameRoot.gd" id="1_root"]
+
+[node name="GameRoot" type="Node2D" unique_id=59188507]
+script = ExtResource("1_root")
