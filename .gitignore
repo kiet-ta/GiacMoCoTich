@@ -25,3 +25,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+.tmp/
+text_editor_themes/
+feature_profiles/
