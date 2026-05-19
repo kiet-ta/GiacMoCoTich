@@ -2,7 +2,9 @@
 
 ## Summary
 
-This project does not integrate the real LeWorldModel machine learning model. Instead, it applies the LeWorldModel idea as a lightweight, rule-based world reaction system inside Godot.
+The MVP now integrates a real local LeWorldModel ML runtime through a Python/PyTorch sidecar on `127.0.0.1`. Godot sends downscaled gameplay frames, action vectors, scalar context, and safe candidate reactions to the sidecar. The sidecar runs a JEPA-style pixel/action latent predictor and returns a standardized reaction.
+
+The existing rule-based `LeWMReactionSystem` remains as the safety fallback and baseline. If the sidecar is offline, too slow, or returns an unsafe intent, Godot rejects the ML output and applies the fallback reaction.
 
 The core idea is:
 
@@ -16,9 +18,11 @@ The core idea is:
 ```mermaid
 flowchart LR
   A["Player Behavior"] --> B["Observation Dictionary"]
-  B --> C["WorldState Runtime State"]
-  C --> D["LeWMReactionSystem"]
-  D --> E["Reaction: intent, severity, effects, ui"]
+  B --> C["LeWMClient / LeWMOrchestrator"]
+  C --> D["Python PyTorch Sidecar"]
+  D --> E["Reaction: intent, severity, effects, ui, confidence"]
+  C -. fallback .-> J["LeWMReactionSystem Guardrail"]
+  J --> E
   E --> F["Gameplay Effects"]
   E --> G["Whisper / Warning"]
   E --> H["Completion Impact Summary"]
@@ -28,10 +32,13 @@ flowchart LR
 
 ## What Was Implemented
 
-The LeWorldModel-inspired system is split into three parts:
+The LeWorldModel MVP runtime is split into five parts:
 
 - `WorldState`: stores runtime chapter state and persistent global memory.
-- `LeWMReactionSystem`: evaluates observations and returns standardized reactions.
+- `LeWMClient`: sends Godot frame/action/context payloads to the localhost sidecar.
+- `LeWMOrchestrator`: treats ML as primary, sanitizes ML output, and falls back to rules.
+- `LeWMReactionSystem`: fallback guardrail and deterministic baseline.
+- `ml_sidecar/`: FastAPI/Pydantic service using the PyTorch model code in `research/lewm`.
 - `ProgressService`: saves global memory deltas into `user://progress.json`.
 
 Each reaction now follows a common contract:
@@ -41,6 +48,8 @@ intent:   What the world thinks is happening.
 severity: How strong the reaction is, from 0 to 100.
 effects:  Gameplay effect names.
 ui:       Whisper, warning, and label text.
+source:   `ml` or `fallback`.
+confidence/model_version/latency_ms: ML observability fields.
 ```
 
 This makes the system easier to extend for Chapter 4 and Chapter 5.
@@ -178,15 +187,13 @@ Manual validation through Godot MCP verifies:
 
 ## MVP Boundary
 
-This is a LeWorldModel-inspired implementation, not a real neural world model.
+The MVP uses real local ML, but keeps the blast radius controlled:
 
-The MVP intentionally avoids:
+- Python/PyTorch runs outside Godot as a localhost sidecar.
+- Godot never executes remote model output directly; it only accepts known reaction intents.
+- Large rollout data and checkpoints stay out of git under `ml_data/` and `models/lewm/`.
+- The sidecar can load trained checkpoints through `LEWM_CHECKPOINT`.
+- If ML is unavailable, rule fallback keeps the game playable.
+- No remote AI service calls are part of the gameplay MVP.
 
-- Python sidecars.
-- PyTorch runtime integration.
-- Model weight loading.
-- Online inference.
-- External AI service calls.
-
-The design keeps the core idea of a world model while remaining lightweight, deterministic, debuggable, and suitable for a Godot 2D prototype.
-
+This keeps the project aligned with real LeWorldModel-style ML while preserving deterministic guardrails for a playable Godot prototype.

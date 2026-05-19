@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader, random_split
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from lewm.datasets import Chapter2TransitionDataset  # noqa: E402
+from lewm.datasets import ChapterTransitionDataset  # noqa: E402
 from lewm.losses import gaussian_regularizer, prediction_loss  # noqa: E402
 from lewm.models import LeWMModel  # noqa: E402
 
@@ -41,7 +41,7 @@ def main() -> None:
     torch.manual_seed(int(train_cfg.get("seed", 42)))
     device = resolve_device(str(train_cfg.get("device", "auto")))
 
-    dataset = Chapter2TransitionDataset(
+    dataset = ChapterTransitionDataset(
         dataset_cfg["root"],
         image_size=int(dataset_cfg.get("image_size", 128)),
         max_transitions=int(dataset_cfg.get("max_transitions", 0)),

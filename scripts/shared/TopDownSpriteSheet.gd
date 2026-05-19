@@ -29,12 +29,9 @@ static func draw(canvas: CanvasItem, sheet_path: String, frame_size: Vector2, po
 static func _get_sheet(sheet_path: String) -> Texture2D:
 	if _textures.has(sheet_path):
 		return _textures[sheet_path]
-	var loaded := load(sheet_path)
-	if loaded is Texture2D:
-		_textures[sheet_path] = loaded
-		return loaded
-	var image := Image.load_from_file(sheet_path)
-	if image == null or image.is_empty():
+	var image := Image.new()
+	var err := image.load(ProjectSettings.globalize_path(sheet_path))
+	if err != OK or image.is_empty():
 		push_error("Failed to load sprite sheet: %s" % sheet_path)
 		return null
 	var texture := ImageTexture.create_from_image(image)

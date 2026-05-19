@@ -35,10 +35,13 @@ feature_profiles/
 # Python research caches
 **/__pycache__/
 *.py[cod]
+.pytest_cache/
+ml_sidecar/.venv/
 
 # LeWM research data and model artifacts
 # Raw frame captures may be large and can contain gameplay telemetry.
 data/lewm_raw/
+ml_data/
 models/lewm/
 *.pt
 *.pth

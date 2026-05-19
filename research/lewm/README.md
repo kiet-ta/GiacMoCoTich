@@ -15,7 +15,9 @@ The current Godot rule-based LeWM remains the gameplay fallback and baseline.
 ```text
 research/lewm/
   configs/
+    train_lewm_chapter1.yaml
     train_lewm_chapter2.yaml
+    train_lewm_chapter3.yaml
     planner_chapter2.yaml
   lewm/
     datasets.py
@@ -31,7 +33,9 @@ research/lewm/
 Expected dataset layout:
 
 ```text
-data/lewm_raw/chapter2/
+ml_data/lewm_raw/chapter_1/
+ml_data/lewm_raw/chapter_2/
+ml_data/lewm_raw/chapter_3/
   episodes/
     ep_000001/
       frames/

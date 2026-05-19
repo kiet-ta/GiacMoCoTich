@@ -4,7 +4,7 @@
 
 This document summarizes the work completed on the Godot 2D prototype, the design and engineering knowledge applied, and the current runtime shape of the project.
 
-The project was moved away from the original Unity / visual-novel direction into a stage-based Godot 2D game. Each chapter now has a different gameplay style, but all chapters share a common chapter flow, local progression, star scoring, and a LeWorldModel-inspired reaction layer.
+The project was moved away from the original Unity / visual-novel direction into a stage-based Godot 2D game. Each chapter now has a different gameplay style, but all chapters share a common chapter flow, local progression, star scoring, and a LeWorldModel reaction layer. The current MVP direction uses a local Python/PyTorch sidecar as the primary LeWorldModel runtime and keeps the older GDScript rule system as fallback.
 
 The current target is a PC Windows prototype built with Godot 4.x.
 
@@ -167,16 +167,17 @@ This avoids forcing three different gameplay modes into one controller while sti
 
 ## Security and Scope Decisions
 
-Several scope decisions were made to keep the MVP reliable:
+Several scope decisions keep the ML-enabled MVP reliable:
 
-- No real Python/PyTorch LeWorldModel sidecar in the MVP.
-- No remote model calls.
+- Python/PyTorch runs only through a localhost sidecar.
+- No remote model calls in gameplay.
 - No downloaded external assets required for the placeholder prototype.
 - No procedural map generation for Chapter 1.
 - Local-only save data.
-- Rule-based LeWorldModel-inspired behavior written in GDScript.
+- Rule-based LeWorldModel behavior remains as fallback and safety guardrail.
+- ML outputs are accepted only when they match known reaction contracts.
 
-These choices reduce dependency risk, performance risk, and security surface.
+These choices reduce dependency risk, performance risk, and security surface while still allowing real local LeWorldModel inference.
 
 ## Testing and Tooling
 
@@ -193,6 +194,7 @@ The smoke tests cover:
 - Progress unlock behavior.
 - Legacy save compatibility with global memory.
 - LeWorldModel reaction contracts.
+- LeWM orchestrator fallback behavior when ML is disabled.
 - Chapter 1 exit completion.
 - Required completion payload fields for LeWorldModel impact and memory updates.
 
@@ -203,4 +205,3 @@ powershell -ExecutionPolicy Bypass -File .\tools\godot_mcp.ps1 -Method tools/cal
 ```
 
 This allows Codex to inspect and control the Godot editor through JSON-RPC when the Godot MCP plugin is running.
-

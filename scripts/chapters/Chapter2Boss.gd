@@ -3,7 +3,7 @@ extends Node2D
 signal chapter_completed(chapter_id: String, payload: Dictionary)
 
 const WorldState = preload("res://scripts/shared/WorldState.gd")
-const LeWMReactionSystem = preload("res://scripts/shared/LeWMReactionSystem.gd")
+const LeWMOrchestrator = preload("res://scripts/shared/LeWMOrchestrator.gd")
 const ThachSanhSprite = preload("res://scripts/shared/ThachSanhSprite.gd")
 const ChanTinhSprite = preload("res://scripts/shared/ChanTinhSprite.gd")
 const RawLeWMRecorder = preload("res://scripts/shared/RawLeWMRecorder.gd")
@@ -16,7 +16,7 @@ const LEWM_WINDOW_SECONDS := 3.0
 const CORNER_READ_MARGIN := 76.0
 
 var world_state := WorldState.new()
-var lewm := LeWMReactionSystem.new()
+var lewm := LeWMOrchestrator.new()
 var raw_recorder := RawLeWMRecorder.new()
 var player_pos := Vector2(150, 330)
 var player_hp := PLAYER_MAX_HP
@@ -52,6 +52,10 @@ var damage_taken_in_window := 0.0
 var arena_pressure := 0.0
 var lewm_intent := "BalancedPressure"
 var lewm_severity := 0.0
+var lewm_source := "fallback"
+var lewm_model_version := "rule-fallback"
+var lewm_confidence := 0.0
+var lewm_latency_ms := 0.0
 var lewm_impact_log: Array[String] = []
 var lewm_tactic_counts := {}
 var lewm_read_counts := {}
@@ -65,7 +69,8 @@ var completion_emitted := false
 
 func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	raw_recorder.configure("chapter2", OS.get_cmdline_user_args())
+	lewm.configure("chapter_2", OS.get_cmdline_user_args())
+	raw_recorder.configure("chapter_2", OS.get_cmdline_user_args())
 	_reset_chapter()
 
 func _reset_chapter() -> void:
@@ -103,6 +108,10 @@ func _reset_chapter() -> void:
 	arena_pressure = 0.0
 	lewm_intent = "BalancedPressure"
 	lewm_severity = 0.0
+	lewm_source = "fallback"
+	lewm_model_version = "rule-fallback"
+	lewm_confidence = 0.0
+	lewm_latency_ms = 0.0
 	lewm_impact_log.clear()
 	lewm_tactic_counts.clear()
 	lewm_read_counts.clear()
@@ -179,6 +188,8 @@ func get_completion_payload() -> Dictionary:
 		"hp_remaining": maxf(player_hp, 0.0),
 		"danger_spikes": danger_spikes,
 		"lewm_impact": lewm_impact_log.duplicate(true),
+		"lewm_source": lewm_source,
+		"lewm_model_version": lewm_model_version,
 		"lewm_tactic_counts": lewm_tactic_counts.duplicate(true),
 		"lewm_read_counts": lewm_read_counts.duplicate(true),
 		"lewm_primary_read": lewm_primary_read,
@@ -186,7 +197,7 @@ func get_completion_payload() -> Dictionary:
 	}
 
 func get_debug_text() -> String:
-	return "%s | tactic:%s pressure:%d" % [world_state.debug_summary(), boss_tactic, int(arena_pressure)]
+	return "%s | tactic:%s pressure:%d | %s" % [world_state.debug_summary(), boss_tactic, int(arena_pressure), lewm.debug_summary()]
 
 func _update_weapon_switch() -> void:
 	var previous := current_weapon
@@ -342,7 +353,7 @@ func _update_lewm_window(delta: float) -> void:
 		"clue_read": clue_read,
 		"trap_cleared": trap_cleared,
 	}
-	var reaction := lewm.evaluate_boss(observation, world_state)
+	var reaction := lewm.evaluate_boss(observation, world_state, get_viewport(), _current_raw_lewm_action_vector())
 	_apply_lewm_reaction(reaction)
 	if lewm_severity >= 70.0:
 		danger_spikes += 1
@@ -372,6 +383,10 @@ func _apply_lewm_reaction(reaction: Dictionary) -> void:
 	arena_pressure = float(reaction.get("arena_pressure", 3.0))
 	lewm_intent = String(reaction.get("intent", boss_tactic))
 	lewm_severity = float(reaction.get("severity", 0.0))
+	lewm_source = String(reaction.get("source", "fallback"))
+	lewm_model_version = String(reaction.get("model_version", "rule-fallback"))
+	lewm_confidence = float(reaction.get("confidence", 0.0))
+	lewm_latency_ms = float(reaction.get("latency_ms", 0.0))
 	lewm_tactic_counts[boss_tactic] = int(lewm_tactic_counts.get(boss_tactic, 0)) + 1
 	var behavior_read := String(reaction.get("behavior_read", ""))
 	if behavior_read != "" and behavior_read != "balanced":
@@ -536,6 +551,10 @@ func _current_raw_lewm_metadata() -> Dictionary:
 		"arena_pressure": arena_pressure,
 		"lewm_intent": lewm_intent,
 		"lewm_severity": lewm_severity,
+		"lewm_source": lewm_source,
+		"lewm_model_version": lewm_model_version,
+		"lewm_confidence": lewm_confidence,
+		"lewm_latency_ms": lewm_latency_ms,
 		"danger_spikes": danger_spikes,
 		"clue_read": clue_read,
 		"trap_cleared": trap_cleared,
@@ -557,6 +576,17 @@ func _boss_action_id() -> int:
 			return 6
 		_:
 			return 0
+
+func _current_raw_lewm_action_vector() -> Array:
+	var action := _current_raw_lewm_action()
+	return [
+		float(action.get("move_x", 0.0)),
+		float(action.get("move_y", 0.0)),
+		float(action.get("attack", 0.0)),
+		float(action.get("dash", 0.0)),
+		float(action.get("weapon_id", 0.0)) / 2.0,
+		float(action.get("boss_action_id", 0.0)) / 6.0,
+	]
 
 func _complete_chapter() -> void:
 	if completion_emitted:

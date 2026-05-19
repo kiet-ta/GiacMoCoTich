@@ -1,5 +1,5 @@
 dataset:
-  root: ml_data/lewm_raw/chapter_2
+  root: ml_data/lewm_raw/chapter_1
   image_size: 128
   validation_fraction: 0.15
   max_transitions: 0
@@ -18,5 +18,5 @@ training:
   gaussian_weight: 0.05
   num_workers: 2
   device: auto
-  checkpoint_dir: models/lewm/chapter2/checkpoints
-  metrics_path: models/lewm/chapter2/training_metrics.json
+  checkpoint_dir: models/lewm/chapter_1/checkpoints
+  metrics_path: models/lewm/chapter_1/training_metrics.json

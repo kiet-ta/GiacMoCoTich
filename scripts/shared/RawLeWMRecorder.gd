@@ -1,6 +1,6 @@
 extends RefCounted
 
-const DEFAULT_BASE_DIR := "res://data/lewm_raw"
+const DEFAULT_BASE_DIR := "res://ml_data/lewm_raw"
 const DEFAULT_IMAGE_SIZE := 128
 const DEFAULT_CAPTURE_INTERVAL := 0.10
 

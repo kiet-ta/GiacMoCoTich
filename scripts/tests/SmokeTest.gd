@@ -4,6 +4,7 @@ const ProgressService = preload("res://scripts/shared/ProgressService.gd")
 const ChapterScoreCalculator = preload("res://scripts/shared/ChapterScoreCalculator.gd")
 const WorldState = preload("res://scripts/shared/WorldState.gd")
 const LeWMReactionSystem = preload("res://scripts/shared/LeWMReactionSystem.gd")
+const LeWMOrchestrator = preload("res://scripts/shared/LeWMOrchestrator.gd")
 
 const SCENE_PATHS := [
 	"res://scenes/GameRoot.tscn",
@@ -22,6 +23,8 @@ func _run() -> void:
 	failures += _test_progress_service()
 	failures += _test_progress_service_old_save_memory()
 	failures += _test_lewm_reaction_contracts()
+	failures += _test_lewm_orchestrator_fallback_contracts()
+	failures += _test_lewm_orchestrator_fake_ml_contract()
 	failures += _test_chapter_1_exit_completion()
 
 	for scene_path in SCENE_PATHS:
@@ -251,4 +254,56 @@ func _test_lewm_reaction_contracts() -> int:
 		push_error("Climb falls/repeated misses should trigger wind and trajectory echo contract.")
 		return 1
 
+	return 0
+
+func _test_lewm_orchestrator_fallback_contracts() -> int:
+	var orchestrator := LeWMOrchestrator.new()
+	orchestrator.configure("chapter_2", PackedStringArray(["--lewm-no-ml"]))
+	var world_state := WorldState.new()
+	var reaction := orchestrator.evaluate_boss({
+		"attack_frequency": 5.0,
+		"bow_ratio": 0.0,
+		"aim_accuracy": 0.0,
+		"distance_to_boss": 70.0,
+		"weapon_switch_frequency": 0.0,
+		"dash_frequency": 0.0,
+		"clue_read": false,
+		"trap_cleared": false,
+	}, world_state, null, [])
+	if String(reaction.get("source", "")) != "fallback":
+		push_error("LeWM orchestrator should mark fallback reactions when ML is disabled.")
+		return 1
+	if not reaction.has("intent") or not reaction.has("severity") or not reaction.has("effects") or not reaction.has("ui"):
+		push_error("LeWM orchestrator fallback must preserve the reaction contract.")
+		return 1
+	if String(reaction.get("intent", "")) != "PunishSpam":
+		push_error("LeWM orchestrator fallback should preserve boss behavior logic.")
+		return 1
+	return 0
+
+func _test_lewm_orchestrator_fake_ml_contract() -> int:
+	var orchestrator := LeWMOrchestrator.new()
+	var candidates: Array = orchestrator._boss_candidates()
+	var reaction := orchestrator._sanitize_reaction("chapter_2", {
+		"intent": "AreaDeny",
+		"severity": 93.0,
+		"effects": ["arena_hazard", "unknown_effect"],
+		"ui": {"whisper": "fake", "warning": "fake warning"},
+		"confidence": 0.82,
+		"model_version": "fake-lewm",
+		"latency_ms": 12.0,
+	}, candidates)
+	if reaction.is_empty():
+		push_error("Fake ML reaction should be accepted when it matches a safe candidate.")
+		return 1
+	if String(reaction.get("source", "")) != "ml" or String(reaction.get("tactic", "")) != "AreaDeny":
+		push_error("Fake ML reaction should preserve ML source and boss tactic.")
+		return 1
+	var effects: Array = reaction.get("effects", [])
+	if effects.has("unknown_effect"):
+		push_error("LeWM orchestrator should strip unsafe ML effects.")
+		return 1
+	if float(reaction.get("arena_pressure", 0.0)) > 18.0:
+		push_error("LeWM orchestrator should clamp ML arena pressure.")
+		return 1
 	return 0

@@ -34,8 +34,8 @@ def load_image(path: Path, image_size: int) -> torch.Tensor:
     return torch.from_numpy(array)
 
 
-class Chapter2TransitionDataset(Dataset):
-    """Frame/action/next-frame transitions recorded from Godot Chapter 2."""
+class ChapterTransitionDataset(Dataset):
+    """Frame/action/next-frame transitions recorded from a Godot chapter."""
 
     def __init__(self, root: str | Path, image_size: int = 128, max_transitions: int = 0) -> None:
         self.root = Path(root)
@@ -83,3 +83,6 @@ class Chapter2TransitionDataset(Dataset):
         if not samples:
             raise ValueError(f"No transitions found under {episodes_dir}")
         return samples
+
+
+Chapter2TransitionDataset = ChapterTransitionDataset

@@ -1,7 +1,7 @@
-torch
-numpy
-pyyaml
-pillow
 fastapi
 uvicorn[standard]
 pydantic
+torch
+numpy
+pillow
+pyyaml

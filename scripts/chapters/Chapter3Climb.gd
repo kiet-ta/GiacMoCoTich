@@ -3,7 +3,8 @@ extends Node2D
 signal chapter_completed(chapter_id: String, payload: Dictionary)
 
 const WorldState = preload("res://scripts/shared/WorldState.gd")
-const LeWMReactionSystem = preload("res://scripts/shared/LeWMReactionSystem.gd")
+const LeWMOrchestrator = preload("res://scripts/shared/LeWMOrchestrator.gd")
+const RawLeWMRecorder = preload("res://scripts/shared/RawLeWMRecorder.gd")
 
 const LEVEL_TOP := -2600.0
 const LEVEL_BOTTOM := 900.0
@@ -12,7 +13,8 @@ const PLAYER_SIZE := Vector2(20, 28)
 const GRAVITY := 760.0
 
 var world_state := WorldState.new()
-var lewm := LeWMReactionSystem.new()
+var lewm := LeWMOrchestrator.new()
+var raw_recorder := RawLeWMRecorder.new()
 var player_pos := Vector2(130, 820)
 var player_vel := Vector2.ZERO
 var grounded := false
@@ -38,11 +40,17 @@ var repeated_miss_count := 0
 var last_fall_zone := 999999
 var lewm_intent := "MountainStillness"
 var lewm_severity := 0.0
+var lewm_source := "fallback"
+var lewm_model_version := "rule-fallback"
+var lewm_confidence := 0.0
+var lewm_latency_ms := 0.0
 var lewm_impact_log: Array[String] = []
 var elapsed := 0.0
 var completion_emitted := false
 
 func _ready() -> void:
+	lewm.configure("chapter_3", OS.get_cmdline_user_args())
+	raw_recorder.configure("chapter_3", OS.get_cmdline_user_args())
 	_build_platforms()
 	queue_redraw()
 
@@ -55,6 +63,7 @@ func _physics_process(delta: float) -> void:
 	_update_movement(delta)
 	_update_lewm(delta)
 	_update_camera()
+	_record_raw_lewm_transition(delta)
 	queue_redraw()
 
 func apply_global_memory(memory: Dictionary) -> void:
@@ -89,11 +98,13 @@ func get_completion_payload() -> Dictionary:
 		"fall_count": fall_count,
 		"height_ratio": _height_ratio(),
 		"lewm_impact": lewm_impact_log.duplicate(true),
+		"lewm_source": lewm_source,
+		"lewm_model_version": lewm_model_version,
 		"global_memory_delta": _global_memory_delta(),
 	}
 
 func get_debug_text() -> String:
-	return "%s | wind:%d ghost:%.1f" % [world_state.debug_summary(), int(wind), ghost_platform_ttl]
+	return "%s | wind:%d ghost:%.1f | %s" % [world_state.debug_summary(), int(wind), ghost_platform_ttl, lewm.debug_summary()]
 
 func _update_idle(delta: float) -> void:
 	if player_pos.distance_to(last_player_pos) < 1.0:
@@ -215,7 +226,7 @@ func _update_lewm(delta: float) -> void:
 		"height_ratio": height_ratio,
 		"idle_time": idle_time,
 		"repeated_miss_count": repeated_miss_count,
-	}, world_state)
+	}, world_state, get_viewport(), _current_lewm_action_vector())
 	_apply_lewm_reaction(reaction)
 
 func _apply_lewm_reaction(reaction: Dictionary) -> void:
@@ -223,6 +234,10 @@ func _apply_lewm_reaction(reaction: Dictionary) -> void:
 	wind_target = float(reaction["wind"])
 	lewm_intent = String(reaction.get("intent", "MountainStillness"))
 	lewm_severity = float(reaction.get("severity", 0.0))
+	lewm_source = String(reaction.get("source", "fallback"))
+	lewm_model_version = String(reaction.get("model_version", "rule-fallback"))
+	lewm_confidence = float(reaction.get("confidence", 0.0))
+	lewm_latency_ms = float(reaction.get("latency_ms", 0.0))
 	if absf(wind_target) > 2.0 and absf(previous_target - wind_target) > 4.0:
 		wind_warning_ttl = 2.0
 	if bool(reaction["ghost_platform"]):
@@ -250,6 +265,59 @@ func _global_memory_delta() -> Dictionary:
 		"climb_anxiety": clampf(fall_count * 0.85 + repeated_miss_count * 1.4, 0.0, 12.0),
 		"dream_instability": clampf(lewm_severity * 0.03, 0.0, 4.0),
 	}
+
+func _current_lewm_action_vector() -> Array:
+	var move_x := 0.0
+	if Input.is_key_pressed(KEY_A):
+		move_x -= 1.0
+	if Input.is_key_pressed(KEY_D):
+		move_x += 1.0
+	return [
+		move_x,
+		1.0 if grounded else 0.0,
+		charge,
+		player_vel.x / 600.0,
+		player_vel.y / 900.0,
+		_height_ratio(),
+	]
+
+func _record_raw_lewm_transition(delta: float) -> void:
+	raw_recorder.record(get_viewport(), delta, {
+		"move_x": _current_lewm_action_vector()[0],
+		"grounded": 1 if grounded else 0,
+		"charge": charge,
+		"velocity_x": player_vel.x,
+		"velocity_y": player_vel.y,
+		"lewm_intent_id": _climb_intent_id(lewm_intent),
+	}, _current_raw_lewm_metadata())
+
+func _current_raw_lewm_metadata() -> Dictionary:
+	return {
+		"elapsed": elapsed,
+		"player_x": player_pos.x,
+		"player_y": player_pos.y,
+		"height_ratio": _height_ratio(),
+		"fall_count": fall_count,
+		"repeated_miss_count": repeated_miss_count,
+		"wind": wind,
+		"lewm_intent": lewm_intent,
+		"lewm_source": lewm_source,
+		"lewm_model_version": lewm_model_version,
+		"lewm_confidence": lewm_confidence,
+	}
+
+func _climb_intent_id(intent: String) -> int:
+	match intent:
+		"WindMemory":
+			return 1
+		"HighAltitudeWind":
+			return 2
+		"MountainBreath":
+			return 3
+		"LandingEcho":
+			return 4
+		_:
+			return 0
 
 func _track_fall_zone() -> void:
 	var zone := int(fall_start_y / 220.0)

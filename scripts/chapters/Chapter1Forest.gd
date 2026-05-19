@@ -3,9 +3,10 @@ extends Node2D
 signal chapter_completed(chapter_id: String, payload: Dictionary)
 
 const WorldState = preload("res://scripts/shared/WorldState.gd")
-const LeWMReactionSystem = preload("res://scripts/shared/LeWMReactionSystem.gd")
+const LeWMOrchestrator = preload("res://scripts/shared/LeWMOrchestrator.gd")
 const ThachSanhSprite = preload("res://scripts/shared/ThachSanhSprite.gd")
 const LyThongSprite = preload("res://scripts/shared/LyThongSprite.gd")
+const RawLeWMRecorder = preload("res://scripts/shared/RawLeWMRecorder.gd")
 
 const TILE := 32
 const MAP_W := 30
@@ -13,7 +14,8 @@ const MAP_H := 20
 const PLAYER_RADIUS := 11.0
 
 var world_state := WorldState.new()
-var lewm := LeWMReactionSystem.new()
+var lewm := LeWMOrchestrator.new()
+var raw_recorder := RawLeWMRecorder.new()
 var player_pos := Vector2(120, 320)
 var player_start := player_pos
 var player_speed := 135.0
@@ -39,6 +41,10 @@ var reverse_leaf_intensity := 0.0
 var exit_guidance := 0.0
 var lewm_intent := "ForestCalm"
 var lewm_severity := 0.0
+var lewm_source := "fallback"
+var lewm_model_version := "rule-fallback"
+var lewm_confidence := 0.0
+var lewm_latency_ms := 0.0
 var lewm_impact_log: Array[String] = []
 var solids: Array[Rect2] = []
 var interactables: Array[Dictionary] = []
@@ -47,6 +53,8 @@ var exit_completion_rect := exit_rect.grow(64.0)
 
 func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	lewm.configure("chapter_1", OS.get_cmdline_user_args())
+	raw_recorder.configure("chapter_1", OS.get_cmdline_user_args())
 	_build_map_collision()
 	_build_interactables()
 	queue_redraw()
@@ -59,6 +67,7 @@ func _physics_process(delta: float) -> void:
 	_update_player(delta)
 	_update_ly_thong(delta)
 	_update_lewm(delta)
+	_record_raw_lewm_transition(delta)
 	queue_redraw()
 
 func apply_global_memory(memory: Dictionary) -> void:
@@ -105,11 +114,13 @@ func get_completion_payload() -> Dictionary:
 		"clues_found": explored_objects.size(),
 		"dream_stability": world_state.get_value("dream_stability"),
 		"lewm_impact": lewm_impact_log.duplicate(true),
+		"lewm_source": lewm_source,
+		"lewm_model_version": lewm_model_version,
 		"global_memory_delta": _global_memory_delta(),
 	}
 
 func get_debug_text() -> String:
-	return world_state.debug_summary()
+	return "%s | %s" % [world_state.debug_summary(), lewm.debug_summary()]
 
 func _update_player(delta: float) -> void:
 	var input := Vector2.ZERO
@@ -200,7 +211,7 @@ func _update_lewm(delta: float) -> void:
 		"distance_to_ly_thong": player_pos.distance_to(ly_thong_pos) if ly_thong_visible else 9999.0,
 		"direct_exit_route": ly_thong_following and player_pos.x > 700.0,
 	}
-	var reaction := lewm.evaluate_forest(observation, world_state)
+	var reaction := lewm.evaluate_forest(observation, world_state, get_viewport(), _current_lewm_action_vector())
 	_apply_lewm_reaction(reaction)
 	fog_alpha = maxf(fog_alpha * 0.98, float(reaction.get("fog", 0.0)))
 	var ui: Dictionary = reaction.get("ui", {})
@@ -210,6 +221,10 @@ func _update_lewm(delta: float) -> void:
 func _apply_lewm_reaction(reaction: Dictionary) -> void:
 	lewm_intent = String(reaction.get("intent", "ForestCalm"))
 	lewm_severity = float(reaction.get("severity", 0.0))
+	lewm_source = String(reaction.get("source", "fallback"))
+	lewm_model_version = String(reaction.get("model_version", "rule-fallback"))
+	lewm_confidence = float(reaction.get("confidence", 0.0))
+	lewm_latency_ms = float(reaction.get("latency_ms", 0.0))
 	if bool(reaction.get("path_shift", false)):
 		path_shift_alpha = 1.0
 	reverse_leaf_intensity = maxf(reverse_leaf_intensity, float(reaction.get("reverse_leaves", 0.0)))
@@ -234,6 +249,64 @@ func _global_memory_delta() -> Dictionary:
 		"suspicion": maxf(0.0, world_state.get_value("suspicion")) * 0.12,
 		"dream_instability": dream_loss,
 	}
+
+func _current_lewm_action_vector() -> Array:
+	var move_x := 0.0
+	var move_y := 0.0
+	if Input.is_key_pressed(KEY_A):
+		move_x -= 1.0
+	if Input.is_key_pressed(KEY_D):
+		move_x += 1.0
+	if Input.is_key_pressed(KEY_W):
+		move_y -= 1.0
+	if Input.is_key_pressed(KEY_S):
+		move_y += 1.0
+	return [
+		move_x,
+		move_y,
+		1.0 if Input.is_key_pressed(KEY_E) else 0.0,
+		float(explored_objects.size()) / 3.0,
+		1.0 if ly_thong_following else 0.0,
+		clampf(player_pos.x / float(MAP_W * TILE), 0.0, 1.0),
+	]
+
+func _record_raw_lewm_transition(delta: float) -> void:
+	raw_recorder.record(get_viewport(), delta, {
+		"move_x": _current_lewm_action_vector()[0],
+		"move_y": _current_lewm_action_vector()[1],
+		"interact": 1 if Input.is_key_pressed(KEY_E) else 0,
+		"clues_found": explored_objects.size(),
+		"ly_thong_following": 1 if ly_thong_following else 0,
+		"lewm_intent_id": _forest_intent_id(lewm_intent),
+	}, _current_raw_lewm_metadata())
+
+func _current_raw_lewm_metadata() -> Dictionary:
+	return {
+		"elapsed": elapsed,
+		"player_x": player_pos.x,
+		"player_y": player_pos.y,
+		"clues_found": explored_objects.size(),
+		"ly_thong_visible": ly_thong_visible,
+		"ly_thong_following": ly_thong_following,
+		"dream_stability": world_state.get_value("dream_stability"),
+		"lewm_intent": lewm_intent,
+		"lewm_source": lewm_source,
+		"lewm_model_version": lewm_model_version,
+		"lewm_confidence": lewm_confidence,
+	}
+
+func _forest_intent_id(intent: String) -> int:
+	match intent:
+		"ObjectMemory":
+			return 1
+		"TemporalFog":
+			return 2
+		"PathShift":
+			return 3
+		"TrustGuide":
+			return 4
+		_:
+			return 0
 
 func _build_map_collision() -> void:
 	solids.clear()
