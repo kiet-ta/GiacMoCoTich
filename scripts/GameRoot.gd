@@ -404,7 +404,7 @@ func _show_completion_overlay(chapter_id: String, payload: Dictionary, score: Di
 	box.add_child(time)
 
 	var impact := Label.new()
-	impact.text = _format_lewm_impact(payload.get("lewm_impact", []))
+	impact.text = _format_lewm_impact(payload)
 	impact.add_theme_font_size_override("font_size", 16)
 	impact.add_theme_color_override("font_color", Color(0.72, 0.92, 1.0))
 	impact.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -471,14 +471,36 @@ func _unlock_message(next_unlocked: String) -> String:
 			return "Mo khoa: %s" % String(data["title"])
 	return "Mo khoa man tiep theo."
 
-func _format_lewm_impact(impact_value: Variant) -> String:
+func _format_lewm_impact(payload_or_impact: Variant) -> String:
+	var payload: Dictionary = payload_or_impact if payload_or_impact is Dictionary else {}
+	var impact_value: Variant = payload.get("lewm_impact", payload_or_impact)
 	var impact: Array = impact_value if impact_value is Array else []
-	if impact.is_empty():
+	var boss_read := _boss_read_label(String(payload.get("lewm_primary_read", "")))
+	if impact.is_empty() and boss_read == "":
 		return "LeWorldModel Impact: chua co phan ung dang ke."
 	var lines := PackedStringArray(["LeWorldModel Impact:"])
 	for item in impact.slice(maxi(impact.size() - 3, 0), impact.size()):
 		lines.append("- %s" % String(item))
+	if boss_read != "":
+		lines.append("- Boss doc loi choi: %s" % boss_read)
 	return "\n".join(lines)
+
+func _boss_read_label(read_key: String) -> String:
+	match read_key:
+		"spam_melee":
+			return "chem riu lien tuc"
+		"kite_bow":
+			return "giu khoang cach bang cung"
+		"accurate_bow":
+			return "ban cung qua chuan"
+		"early_dash":
+			return "dash som theo nhip boss"
+		"corner_hold":
+			return "giu goc an toan qua lau"
+		"weapon_switch":
+			return "doi vu khi qua gap"
+		_:
+			return ""
 
 func _show_menu_notice(text: String) -> void:
 	if menu != null:

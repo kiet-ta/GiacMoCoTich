@@ -4,6 +4,8 @@ signal chapter_completed(chapter_id: String, payload: Dictionary)
 
 const WorldState = preload("res://scripts/shared/WorldState.gd")
 const LeWMReactionSystem = preload("res://scripts/shared/LeWMReactionSystem.gd")
+const ThachSanhSprite = preload("res://scripts/shared/ThachSanhSprite.gd")
+const LyThongSprite = preload("res://scripts/shared/LyThongSprite.gd")
 
 const TILE := 32
 const MAP_W := 30
@@ -15,7 +17,13 @@ var lewm := LeWMReactionSystem.new()
 var player_pos := Vector2(120, 320)
 var player_start := player_pos
 var player_speed := 135.0
+var player_facing := Vector2.DOWN
+var player_anim_time := 0.0
+var player_moving := false
 var ly_thong_pos := Vector2(-80, 310)
+var ly_thong_facing := Vector2.DOWN
+var ly_thong_anim_time := 0.0
+var ly_thong_moving := false
 var ly_thong_visible := false
 var ly_thong_dialogue_done := false
 var ly_thong_following := false
@@ -38,6 +46,7 @@ var exit_rect := Rect2(880, 280, 48, 96)
 var exit_completion_rect := exit_rect.grow(64.0)
 
 func _ready() -> void:
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_build_map_collision()
 	_build_interactables()
 	queue_redraw()
@@ -114,11 +123,16 @@ func _update_player(delta: float) -> void:
 		input.x += 1.0
 	input = input.normalized()
 
+	var moved := false
 	if input != Vector2.ZERO:
+		player_facing = ThachSanhSprite.facing_from_input(player_facing, input)
 		var next_pos := player_pos + input * player_speed * delta
 		if not _is_blocked(next_pos):
 			player_pos = next_pos
 			moved_distance = player_start.distance_to(player_pos)
+			moved = true
+	player_moving = moved
+	player_anim_time = ThachSanhSprite.next_walk_time(player_anim_time, player_moving, delta)
 
 	player_pos.x = clampf(player_pos.x, 32.0, MAP_W * TILE - 32.0)
 	player_pos.y = clampf(player_pos.y, 32.0, MAP_H * TILE - 32.0)
@@ -146,6 +160,7 @@ func _try_interact() -> void:
 
 func _update_ly_thong(delta: float) -> void:
 	if not ly_thong_visible:
+		ly_thong_moving = false
 		return
 
 	var target := player_pos
@@ -157,6 +172,11 @@ func _update_ly_thong(delta: float) -> void:
 	var direction := ly_thong_pos.direction_to(target)
 	if ly_thong_pos.distance_to(target) > 8.0:
 		ly_thong_pos += direction * 95.0 * delta
+		ly_thong_facing = LyThongSprite.facing_from_input(ly_thong_facing, direction)
+		ly_thong_moving = true
+	else:
+		ly_thong_moving = false
+	ly_thong_anim_time = LyThongSprite.next_walk_time(ly_thong_anim_time, ly_thong_moving, delta)
 
 	if ly_thong_following and exit_completion_rect.has_point(player_pos) and ly_thong_pos.distance_to(player_pos) < 140.0:
 		_complete_chapter()
@@ -271,10 +291,20 @@ func _draw() -> void:
 	_draw_exit()
 	_draw_interactables()
 	_draw_lewm_phenomena()
-	_draw_character(player_pos, Color(0.25, 0.75, 0.95), Color(0.08, 0.16, 0.23))
+	_draw_player()
 	if ly_thong_visible:
-		_draw_character(ly_thong_pos, Color(0.82, 0.50, 0.18), Color(0.22, 0.10, 0.04))
+		_draw_ly_thong()
 	_draw_fog()
+
+func _draw_player() -> void:
+	ThachSanhSprite.draw(self, player_pos, player_facing, player_anim_time, player_moving)
+
+func _draw_ly_thong() -> void:
+	if not ly_thong_dialogue_done:
+		draw_circle(ly_thong_pos, 24.0 + sin(elapsed * 5.0) * 3.0, Color(1.0, 0.78, 0.35, 0.26))
+	LyThongSprite.draw(self, ly_thong_pos, ly_thong_facing, ly_thong_anim_time, ly_thong_moving)
+	if not ly_thong_dialogue_done:
+		_draw_world_label(ly_thong_pos + Vector2(-42, -42), "E noi chuyen", Color(1.0, 0.86, 0.44))
 
 func _draw_tiles() -> void:
 	for y in range(MAP_H):
@@ -315,15 +345,6 @@ func _draw_interactables() -> void:
 			_draw_world_label(pos + Vector2(-28, -34), "E", Color(0.70, 0.90, 1.0))
 		elif not seen:
 			draw_circle(pos, 15.0 + sin(elapsed * 4.0) * 2.0, Color(0.55, 0.72, 0.95, 0.18))
-
-func _draw_character(pos: Vector2, body: Color, shadow: Color) -> void:
-	draw_circle(pos + Vector2(0, 14), 12.0, Color(0.0, 0.0, 0.0, 0.25))
-	draw_rect(Rect2(pos + Vector2(-9, -3), Vector2(18, 22)), body)
-	draw_circle(pos + Vector2(0, -11), 10, body.lightened(0.25))
-	draw_rect(Rect2(pos + Vector2(-11, 18), Vector2(22, 5)), shadow)
-	if ly_thong_visible and pos == ly_thong_pos and not ly_thong_dialogue_done:
-		draw_circle(pos, 24.0 + sin(elapsed * 5.0) * 3.0, Color(1.0, 0.78, 0.35, 0.26))
-		_draw_world_label(pos + Vector2(-42, -42), "E noi chuyen", Color(1.0, 0.86, 0.44))
 
 func _draw_fog() -> void:
 	if fog_alpha > 0.01:

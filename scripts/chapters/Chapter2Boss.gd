@@ -4,21 +4,33 @@ signal chapter_completed(chapter_id: String, payload: Dictionary)
 
 const WorldState = preload("res://scripts/shared/WorldState.gd")
 const LeWMReactionSystem = preload("res://scripts/shared/LeWMReactionSystem.gd")
+const ThachSanhSprite = preload("res://scripts/shared/ThachSanhSprite.gd")
+const ChanTinhSprite = preload("res://scripts/shared/ChanTinhSprite.gd")
+const RawLeWMRecorder = preload("res://scripts/shared/RawLeWMRecorder.gd")
 
 const ARENA := Rect2(420, 64, 520, 520)
 const PREP_AREA := Rect2(48, 64, 320, 520)
 const PLAYER_MAX_HP := 100.0
 const BOSS_MAX_HP := 360.0
+const LEWM_WINDOW_SECONDS := 3.0
+const CORNER_READ_MARGIN := 76.0
 
 var world_state := WorldState.new()
 var lewm := LeWMReactionSystem.new()
+var raw_recorder := RawLeWMRecorder.new()
 var player_pos := Vector2(150, 330)
 var player_hp := PLAYER_MAX_HP
 var player_speed := 165.0
+var player_facing := Vector2.RIGHT
+var player_anim_time := 0.0
+var player_moving := false
 var dash_cd := 0.0
 var invuln := 0.0
 var current_weapon := "axe"
 var boss_pos := Vector2(700, 320)
+var boss_facing := Vector2.LEFT
+var boss_anim_time := 0.0
+var boss_moving := false
 var boss_hp := BOSS_MAX_HP
 var boss_tactic := "BalancedPressure"
 var boss_attack_cd := 0.0
@@ -34,10 +46,17 @@ var bow_shots_in_window := 0
 var bow_hits_in_window := 0
 var weapon_switches_in_window := 0
 var dash_count_in_window := 0
+var early_dash_count_in_window := 0
+var corner_time_in_window := 0.0
+var damage_taken_in_window := 0.0
 var arena_pressure := 0.0
 var lewm_intent := "BalancedPressure"
 var lewm_severity := 0.0
 var lewm_impact_log: Array[String] = []
+var lewm_tactic_counts := {}
+var lewm_read_counts := {}
+var lewm_primary_read := "balanced"
+var repeated_tactic_windows := 0
 var elapsed := 0.0
 var danger_spikes := 0
 var clue_read := false
@@ -45,14 +64,22 @@ var trap_cleared := false
 var completion_emitted := false
 
 func _ready() -> void:
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	raw_recorder.configure("chapter2", OS.get_cmdline_user_args())
 	_reset_chapter()
 
 func _reset_chapter() -> void:
 	player_pos = Vector2(150, 330)
 	player_hp = PLAYER_MAX_HP
 	player_speed = 165.0
+	player_facing = Vector2.RIGHT
+	player_anim_time = 0.0
+	player_moving = false
 	current_weapon = "axe"
 	boss_pos = Vector2(700, 320)
+	boss_facing = Vector2.LEFT
+	boss_anim_time = 0.0
+	boss_moving = false
 	boss_hp = BOSS_MAX_HP
 	boss_tactic = "BalancedPressure"
 	boss_attack_cd = 0.0
@@ -70,10 +97,17 @@ func _reset_chapter() -> void:
 	bow_hits_in_window = 0
 	weapon_switches_in_window = 0
 	dash_count_in_window = 0
+	early_dash_count_in_window = 0
+	corner_time_in_window = 0.0
+	damage_taken_in_window = 0.0
 	arena_pressure = 0.0
 	lewm_intent = "BalancedPressure"
 	lewm_severity = 0.0
 	lewm_impact_log.clear()
+	lewm_tactic_counts.clear()
+	lewm_read_counts.clear()
+	lewm_primary_read = "balanced"
+	repeated_tactic_windows = 0
 	elapsed = 0.0
 	danger_spikes = 0
 	clue_read = false
@@ -106,6 +140,7 @@ func _physics_process(delta: float) -> void:
 		_update_lewm_window(delta)
 		_update_boss(delta)
 		_check_boss_contact(delta)
+		_record_raw_lewm_transition(delta)
 
 	if player_hp <= 0.0:
 		_reset_chapter()
@@ -144,6 +179,9 @@ func get_completion_payload() -> Dictionary:
 		"hp_remaining": maxf(player_hp, 0.0),
 		"danger_spikes": danger_spikes,
 		"lewm_impact": lewm_impact_log.duplicate(true),
+		"lewm_tactic_counts": lewm_tactic_counts.duplicate(true),
+		"lewm_read_counts": lewm_read_counts.duplicate(true),
+		"lewm_primary_read": lewm_primary_read,
 		"global_memory_delta": _global_memory_delta(),
 	}
 
@@ -177,8 +215,13 @@ func _update_player(delta: float) -> void:
 		dash_cd = 0.55
 		invuln = 0.18
 		dash_count_in_window += 1
+		if arena_started and telegraphs.is_empty() and boss_attack_cd <= 0.35:
+			early_dash_count_in_window += 1
 
 	player_pos += input * speed * delta
+	player_moving = input != Vector2.ZERO
+	player_facing = ThachSanhSprite.facing_from_input(player_facing, input)
+	player_anim_time = ThachSanhSprite.next_walk_time(player_anim_time, player_moving, delta)
 	if arena_started:
 		player_pos.x = clampf(player_pos.x, ARENA.position.x + 18.0, ARENA.end.x - 18.0)
 		player_pos.y = clampf(player_pos.y, ARENA.position.y + 18.0, ARENA.end.y - 18.0)
@@ -254,7 +297,8 @@ func _update_telegraphs(delta: float) -> void:
 		telegraphs[i] = t
 		if float(t["ttl"]) > 0.0:
 			continue
-		if String(t.get("kind", "hazard")) == "melee_counter":
+		var kind := String(t.get("kind", "hazard"))
+		if kind == "melee_counter" or kind == "delayed_strike":
 			if Vector2(t["pos"]).distance_to(player_pos) < float(t["radius"]):
 				_damage_player(float(t.get("damage", 18.0)))
 		else:
@@ -268,8 +312,11 @@ func _update_arena_start() -> void:
 		whisper = "Dau truong dong lai. Boss dang doc tung thao tac."
 
 func _update_lewm_window(delta: float) -> void:
+	if _player_is_in_corner():
+		corner_time_in_window += delta
+
 	window_time += delta
-	if window_time < 3.0:
+	if window_time < LEWM_WINDOW_SECONDS:
 		return
 
 	var bow_ratio := 0.0
@@ -286,6 +333,12 @@ func _update_lewm_window(delta: float) -> void:
 		"distance_to_boss": player_pos.distance_to(boss_pos),
 		"weapon_switch_frequency": weapon_switches_in_window,
 		"dash_frequency": dash_count_in_window,
+		"early_dash_frequency": early_dash_count_in_window,
+		"corner_time": corner_time_in_window,
+		"damage_taken_rate": damage_taken_in_window,
+		"player_hp_ratio": maxf(player_hp, 0.0) / PLAYER_MAX_HP,
+		"previous_tactic": boss_tactic,
+		"repeated_tactic_windows": repeated_tactic_windows,
 		"clue_read": clue_read,
 		"trap_cleared": trap_cleared,
 	}
@@ -296,8 +349,8 @@ func _update_lewm_window(delta: float) -> void:
 	var ui: Dictionary = reaction.get("ui", {})
 	if String(ui.get("whisper", "")) != "":
 		whisper = ui["whisper"]
-	if boss_tactic == "AreaDeny" or arena_pressure > 12.0:
-		_spawn_hazard_telegraph(player_pos + Vector2(randf_range(-60, 60), randf_range(-60, 60)), 46.0, 0.75, "hazard")
+	if boss_tactic == "AreaDeny":
+		_spawn_area_deny_telegraph()
 
 	window_time = 0.0
 	attacks_in_window = 0
@@ -305,12 +358,25 @@ func _update_lewm_window(delta: float) -> void:
 	bow_hits_in_window = 0
 	weapon_switches_in_window = 0
 	dash_count_in_window = 0
+	early_dash_count_in_window = 0
+	corner_time_in_window = 0.0
+	damage_taken_in_window = 0.0
 
 func _apply_lewm_reaction(reaction: Dictionary) -> void:
+	var previous_tactic := boss_tactic
 	boss_tactic = String(reaction.get("tactic", "BalancedPressure"))
+	if boss_tactic == previous_tactic and boss_tactic != "BalancedPressure":
+		repeated_tactic_windows += 1
+	else:
+		repeated_tactic_windows = 0
 	arena_pressure = float(reaction.get("arena_pressure", 3.0))
 	lewm_intent = String(reaction.get("intent", boss_tactic))
 	lewm_severity = float(reaction.get("severity", 0.0))
+	lewm_tactic_counts[boss_tactic] = int(lewm_tactic_counts.get(boss_tactic, 0)) + 1
+	var behavior_read := String(reaction.get("behavior_read", ""))
+	if behavior_read != "" and behavior_read != "balanced":
+		lewm_read_counts[behavior_read] = int(lewm_read_counts.get(behavior_read, 0)) + 1
+		lewm_primary_read = _dominant_key(lewm_read_counts, "balanced")
 	_remember_impact(reaction)
 
 func _remember_impact(reaction: Dictionary) -> void:
@@ -343,9 +409,16 @@ func _update_boss(delta: float) -> void:
 		var side := Vector2(-direction.y, direction.x) * sin(Time.get_ticks_msec() * 0.012)
 		direction = (direction + side * 0.8).normalized()
 		speed = 135.0
+	elif boss_tactic == "DelayedStrike":
+		speed = 108.0
+	elif boss_tactic == "AreaDeny":
+		speed = 116.0
 	elif boss_tactic == "WeaponRead":
 		speed = 150.0
 
+	boss_moving = direction != Vector2.ZERO
+	boss_facing = ChanTinhSprite.facing_from_input(boss_facing, direction)
+	boss_anim_time = ChanTinhSprite.next_walk_time(boss_anim_time, boss_moving, delta)
 	boss_pos += direction * speed * delta
 	boss_pos.x = clampf(boss_pos.x, ARENA.position.x + 32.0, ARENA.end.x - 32.0)
 	boss_pos.y = clampf(boss_pos.y, ARENA.position.y + 32.0, ARENA.end.y - 32.0)
@@ -364,6 +437,10 @@ func _boss_attack() -> void:
 		_spawn_hazard_telegraph(player_pos, 48.0, 0.70, "hazard")
 		boss_attack_cd = 1.25
 		return
+	if boss_tactic == "DelayedStrike" and boss_pos.distance_to(player_pos) < 150.0:
+		_spawn_hazard_telegraph(player_pos, 38.0, 0.95, "delayed_strike")
+		boss_attack_cd = 1.15
+		return
 	projectiles.append({
 		"pos": boss_pos + direction * 28.0,
 		"vel": direction * (230.0 + arena_pressure * 2.0),
@@ -379,16 +456,23 @@ func _check_boss_contact(_delta: float) -> void:
 func _damage_player(amount: float) -> void:
 	if invuln > 0.0:
 		return
-	player_hp -= amount
+	var applied := minf(amount, maxf(player_hp, 0.0))
+	player_hp -= applied
+	damage_taken_in_window += applied
 	invuln = 0.35
 
 func _spawn_hazard_telegraph(pos: Vector2, radius: float, ttl: float, kind: String) -> void:
+	var damage := 0.0
+	if kind == "melee_counter":
+		damage = 22.0
+	elif kind == "delayed_strike":
+		damage = 18.0
 	telegraphs.append({
 		"pos": pos,
 		"radius": radius,
 		"ttl": ttl,
 		"kind": kind,
-		"damage": 22.0 if kind == "melee_counter" else 0.0,
+		"damage": damage,
 	})
 
 func _spawn_hazard(pos: Vector2, radius := 46.0) -> void:
@@ -397,6 +481,82 @@ func _spawn_hazard(pos: Vector2, radius := 46.0) -> void:
 		"radius": radius,
 		"ttl": 2.2,
 	})
+
+func _spawn_area_deny_telegraph() -> void:
+	var pos := player_pos + Vector2(randf_range(-52.0, 52.0), randf_range(-52.0, 52.0))
+	pos.x = clampf(pos.x, ARENA.position.x + 56.0, ARENA.end.x - 56.0)
+	pos.y = clampf(pos.y, ARENA.position.y + 56.0, ARENA.end.y - 56.0)
+	_spawn_hazard_telegraph(pos, 48.0, 0.85, "hazard")
+
+func _player_is_in_corner() -> bool:
+	var near_x := player_pos.x < ARENA.position.x + CORNER_READ_MARGIN or player_pos.x > ARENA.end.x - CORNER_READ_MARGIN
+	var near_y := player_pos.y < ARENA.position.y + CORNER_READ_MARGIN or player_pos.y > ARENA.end.y - CORNER_READ_MARGIN
+	return near_x and near_y
+
+func _dominant_key(counts: Dictionary, fallback: String) -> String:
+	var best_key := fallback
+	var best_count := 0
+	for key in counts.keys():
+		var count := int(counts[key])
+		if count > best_count:
+			best_key = String(key)
+			best_count = count
+	return best_key
+
+func _record_raw_lewm_transition(delta: float) -> void:
+	raw_recorder.record(get_viewport(), delta, _current_raw_lewm_action(), _current_raw_lewm_metadata())
+
+func _current_raw_lewm_action() -> Dictionary:
+	var move_x := 0.0
+	var move_y := 0.0
+	if Input.is_key_pressed(KEY_A):
+		move_x -= 1.0
+	if Input.is_key_pressed(KEY_D):
+		move_x += 1.0
+	if Input.is_key_pressed(KEY_W):
+		move_y -= 1.0
+	if Input.is_key_pressed(KEY_S):
+		move_y += 1.0
+	return {
+		"move_x": move_x,
+		"move_y": move_y,
+		"attack": 1 if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) else 0,
+		"dash": 1 if invuln > 0.0 else 0,
+		"weapon_id": 0 if current_weapon == "axe" else 1,
+		"boss_action_id": _boss_action_id(),
+	}
+
+func _current_raw_lewm_metadata() -> Dictionary:
+	return {
+		"elapsed": elapsed,
+		"player_hp": maxf(player_hp, 0.0),
+		"boss_hp": maxf(boss_hp, 0.0),
+		"distance_to_boss": player_pos.distance_to(boss_pos),
+		"boss_tactic": boss_tactic,
+		"arena_pressure": arena_pressure,
+		"lewm_intent": lewm_intent,
+		"lewm_severity": lewm_severity,
+		"danger_spikes": danger_spikes,
+		"clue_read": clue_read,
+		"trap_cleared": trap_cleared,
+	}
+
+func _boss_action_id() -> int:
+	match boss_tactic:
+		"CloseGap":
+			return 1
+		"PunishSpam":
+			return 2
+		"AntiAim":
+			return 3
+		"DelayedStrike":
+			return 4
+		"AreaDeny":
+			return 5
+		"WeaponRead":
+			return 6
+		_:
+			return 0
 
 func _complete_chapter() -> void:
 	if completion_emitted:
@@ -412,6 +572,10 @@ func _boss_tactic_text() -> String:
 			return "Boss dang ap sat."
 		"AntiAim":
 			return "Boss dang ne mui ten."
+		"DelayedStrike":
+			return "Boss dang giu nhip ra don."
+		"AreaDeny":
+			return "Boss dang khoa goc dung."
 		"WeaponRead":
 			return "Boss dang doc doi vu khi."
 		_:
@@ -479,8 +643,11 @@ func _draw_telegraphs() -> void:
 		var radius := float(t.get("radius", 46.0))
 		var alpha := clampf(0.22 + sin(elapsed * 16.0) * 0.10, 0.12, 0.40)
 		var color := Color(1.0, 0.28, 0.08, alpha)
-		if String(t.get("kind", "hazard")) == "melee_counter":
+		var kind := String(t.get("kind", "hazard"))
+		if kind == "melee_counter":
 			color = Color(1.0, 0.72, 0.18, alpha)
+		elif kind == "delayed_strike":
+			color = Color(0.95, 0.16, 0.36, alpha)
 		draw_circle(t["pos"], radius, color)
 		draw_circle(t["pos"], radius, color.lightened(0.35), false, 3.0)
 		draw_string(ThemeDB.fallback_font, Vector2(t["pos"]) + Vector2(-18, -radius - 8), "%.1f" % maxf(ttl, 0.0), HORIZONTAL_ALIGNMENT_LEFT, 48, 14, Color.WHITE)
@@ -491,8 +658,8 @@ func _draw_projectiles() -> void:
 		draw_circle(p["pos"], 5.0, color)
 
 func _draw_player() -> void:
-	var body := Color(0.25, 0.72, 0.95) if invuln <= 0.0 else Color(0.70, 0.90, 1.0)
-	draw_circle(player_pos, 16.0, body)
+	var tint := Color.WHITE if invuln <= 0.0 else Color(0.70, 0.90, 1.0)
+	ThachSanhSprite.draw(self, player_pos, player_facing, player_anim_time, player_moving, tint)
 	var aim := player_pos.direction_to(get_global_mouse_position())
 	draw_line(player_pos, player_pos + aim * 32.0, Color(0.95, 0.95, 0.95), 3.0)
 	if current_weapon == "axe":
@@ -501,26 +668,21 @@ func _draw_player() -> void:
 		draw_line(player_pos + aim * 16.0, player_pos + aim * 36.0, Color(0.62, 0.36, 0.18), 4.0)
 
 func _draw_boss() -> void:
+	_draw_boss_aura()
+	ChanTinhSprite.draw(self, boss_pos, boss_facing, boss_anim_time, boss_moving)
 	_draw_boss_world_hp()
-	draw_circle(boss_pos, 31.0, Color(0.28, 0.03, 0.06))
-	draw_circle(boss_pos + Vector2(-11, -6), 5.0, Color(0.95, 0.10, 0.06))
-	draw_circle(boss_pos + Vector2(11, -6), 5.0, Color(0.95, 0.10, 0.06))
-	draw_colored_polygon([
-		boss_pos + Vector2(-22, -24),
-		boss_pos + Vector2(-40, -52),
-		boss_pos + Vector2(-5, -31),
-	], Color(0.48, 0.06, 0.05))
-	draw_colored_polygon([
-		boss_pos + Vector2(22, -24),
-		boss_pos + Vector2(40, -52),
-		boss_pos + Vector2(5, -31),
-	], Color(0.48, 0.06, 0.05))
+
+func _draw_boss_aura() -> void:
 	if boss_tactic == "PunishSpam":
 		draw_circle(boss_pos, 42.0, Color(1.0, 0.18, 0.08, 0.25))
 	elif boss_tactic == "CloseGap":
 		draw_circle(boss_pos, 40.0, Color(1.0, 0.60, 0.18, 0.20))
 	elif boss_tactic == "AntiAim":
 		draw_circle(boss_pos, 40.0, Color(0.40, 0.70, 1.0, 0.18))
+	elif boss_tactic == "DelayedStrike":
+		draw_circle(boss_pos, 39.0, Color(0.82, 0.10, 0.28, 0.22))
+	elif boss_tactic == "AreaDeny":
+		draw_circle(boss_pos, 44.0, Color(0.82, 0.02, 0.04, 0.24))
 
 func _draw_boss_world_hp() -> void:
 	var bar := Rect2(boss_pos + Vector2(-54, -70), Vector2(108, 9))

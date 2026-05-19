@@ -28,3 +28,18 @@ Thumbs.db
 .tmp/
 text_editor_themes/
 feature_profiles/
+
+# Local Codex/Godot runtime state
+.codex_home/
+
+# Python research caches
+**/__pycache__/
+*.py[cod]
+
+# LeWM research data and model artifacts
+# Raw frame captures may be large and can contain gameplay telemetry.
+data/lewm_raw/
+models/lewm/
+*.pt
+*.pth
+*.ckpt

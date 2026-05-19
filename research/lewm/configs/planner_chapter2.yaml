@@ -1,0 +1,16 @@
+planner:
+  horizon: 5
+  candidates: 256
+  elite_fraction: 0.12
+  iterations: 3
+  latency_budget_ms: 80
+
+actions:
+  boss_action_ids:
+    0: balanced_pressure
+    1: close_gap
+    2: counter_melee
+    3: anti_aim_zigzag
+    4: delayed_strike
+    5: area_deny
+    6: projectile_pressure

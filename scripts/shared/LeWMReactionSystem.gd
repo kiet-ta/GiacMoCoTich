@@ -76,8 +76,15 @@ func evaluate_boss(observation: Dictionary, world_state) -> Dictionary:
 	var distance := float(observation.get("distance_to_boss", 0.0))
 	var weapon_switch_frequency := float(observation.get("weapon_switch_frequency", 0.0))
 	var dash_frequency := float(observation.get("dash_frequency", 0.0))
+	var early_dash_frequency := float(observation.get("early_dash_frequency", 0.0))
+	var corner_time := float(observation.get("corner_time", 0.0))
+	var damage_taken_rate := float(observation.get("damage_taken_rate", 0.0))
+	var player_hp_ratio := float(observation.get("player_hp_ratio", 1.0))
+	var previous_tactic := String(observation.get("previous_tactic", ""))
+	var repeated_tactic_windows := int(observation.get("repeated_tactic_windows", 0))
 	var clue_read := bool(observation.get("clue_read", false))
 	var trap_cleared := bool(observation.get("trap_cleared", false))
+	var behavior_read := "balanced"
 
 	if attack_frequency >= 4.0 and bow_ratio < 0.4:
 		tactic = "PunishSpam"
@@ -86,7 +93,17 @@ func evaluate_boss(observation: Dictionary, world_state) -> Dictionary:
 		effects = ["counter_ring", "melee_pressure"]
 		whisper = "Boss da doc duoc nhip chem lien tuc."
 		warning = "Vong phan don sap no."
+		behavior_read = "spam_melee"
 		world_state.add_value("combat_style_spam", 8.0)
+	elif corner_time >= 1.5:
+		tactic = "AreaDeny"
+		pressure = 15.0
+		severity = 76.0
+		effects = ["arena_hazard", "corner_read"]
+		whisper = "Goc an toan dang bi hang da nuot lai."
+		warning = "Boss dang khoa goc dung."
+		behavior_read = "corner_hold"
+		world_state.add_value("danger", 1.4)
 	elif bow_ratio > 0.65 and distance > 180.0:
 		tactic = "CloseGap"
 		pressure = 14.0
@@ -94,6 +111,7 @@ func evaluate_boss(observation: Dictionary, world_state) -> Dictionary:
 		effects = ["close_gap", "dash_line"]
 		whisper = "Khoang cach an toan dang bi rut ngan."
 		warning = "Boss sap ap sat."
+		behavior_read = "kite_bow"
 		world_state.add_value("combat_style_kite", 8.0)
 	elif aim_accuracy > 0.62 and bow_ratio > 0.45:
 		tactic = "AntiAim"
@@ -102,6 +120,15 @@ func evaluate_boss(observation: Dictionary, world_state) -> Dictionary:
 		effects = ["zigzag", "arrow_read"]
 		whisper = "Mui ten qua chuan xac lam boss doi buoc di."
 		warning = "Boss dang ne duong ban."
+		behavior_read = "accurate_bow"
+	elif early_dash_frequency >= 2.0 or (dash_frequency > 3.0 and distance < 160.0):
+		tactic = "DelayedStrike"
+		pressure = 11.0
+		severity = 62.0
+		effects = ["feint", "delayed_hit"]
+		whisper = "Boss da bat dau giu don sau nhip dash."
+		warning = "Don tiep theo se cham hon."
+		behavior_read = "early_dash"
 	elif weapon_switch_frequency > 4.0:
 		tactic = "WeaponRead"
 		pressure = 10.0
@@ -109,11 +136,22 @@ func evaluate_boss(observation: Dictionary, world_state) -> Dictionary:
 		effects = ["bait_switch", "timing_read"]
 		whisper = "Doi vu khi qua gap de lo y do."
 		warning = "Boss dang canh nhip doi vu khi."
+		behavior_read = "weapon_switch"
 
 	if dash_frequency > 3.0:
 		pressure += 2.0
 		severity = maxf(severity, 50.0)
 		effects.append("dash_read")
+
+	if previous_tactic == tactic and tactic != "BalancedPressure" and repeated_tactic_windows >= 2:
+		pressure *= 0.84
+		severity *= 0.90
+		effects.append("reaction_cooldown")
+
+	if player_hp_ratio < 0.35 and damage_taken_rate > 10.0:
+		pressure *= 0.72
+		severity *= 0.82
+		effects.append("fair_pressure_drop")
 
 	if clue_read:
 		severity *= 0.82
@@ -128,6 +166,7 @@ func evaluate_boss(observation: Dictionary, world_state) -> Dictionary:
 	return _with_extra(reaction, {
 		"tactic": tactic,
 		"arena_pressure": pressure,
+		"behavior_read": behavior_read,
 	})
 
 func evaluate_climb(observation: Dictionary, world_state) -> Dictionary:

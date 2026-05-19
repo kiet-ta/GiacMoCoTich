@@ -203,6 +203,44 @@ func _test_lewm_reaction_contracts() -> int:
 		push_error("Boss spam behavior should trigger strong PunishSpam reaction.")
 		return 1
 
+	var delayed := lewm.evaluate_boss({
+		"attack_frequency": 1.0,
+		"bow_ratio": 0.0,
+		"aim_accuracy": 0.0,
+		"distance_to_boss": 120.0,
+		"weapon_switch_frequency": 0.0,
+		"dash_frequency": 4.0,
+		"early_dash_frequency": 2.0,
+		"corner_time": 0.0,
+		"damage_taken_rate": 0.0,
+		"player_hp_ratio": 1.0,
+		"clue_read": false,
+		"trap_cleared": false,
+	}, WorldState.new())
+	var delayed_effects: Array = delayed.get("effects", [])
+	if String(delayed.get("intent", "")) != "DelayedStrike" or not delayed_effects.has("delayed_hit"):
+		push_error("Boss early dash behavior should trigger DelayedStrike reaction.")
+		return 1
+
+	var area_deny := lewm.evaluate_boss({
+		"attack_frequency": 0.0,
+		"bow_ratio": 0.2,
+		"aim_accuracy": 0.0,
+		"distance_to_boss": 220.0,
+		"weapon_switch_frequency": 0.0,
+		"dash_frequency": 0.0,
+		"early_dash_frequency": 0.0,
+		"corner_time": 2.0,
+		"damage_taken_rate": 0.0,
+		"player_hp_ratio": 1.0,
+		"clue_read": false,
+		"trap_cleared": false,
+	}, WorldState.new())
+	var area_deny_effects: Array = area_deny.get("effects", [])
+	if String(area_deny.get("intent", "")) != "AreaDeny" or not area_deny_effects.has("corner_read"):
+		push_error("Boss corner camping behavior should trigger AreaDeny reaction.")
+		return 1
+
 	var climb := lewm.evaluate_climb({
 		"fall_count": 3,
 		"height_ratio": 0.60,
