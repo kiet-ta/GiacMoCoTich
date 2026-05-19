@@ -2,10 +2,12 @@ dataset:
   root: ml_data/lewm_raw/chapter_2
   image_size: 128
   validation_fraction: 0.15
+  split_unit: episode
   max_transitions: 0
+  min_train_transitions: 500
 
 model:
-  action_dim: 6
+  action_dim: 8
   latent_dim: 256
   hidden_dim: 512
 
@@ -16,7 +18,9 @@ training:
   learning_rate: 0.0003
   weight_decay: 0.000001
   gaussian_weight: 0.05
+  grad_clip_norm: 1.0
+  precision: auto
   num_workers: 2
   device: auto
-  checkpoint_dir: models/lewm/chapter2/checkpoints
-  metrics_path: models/lewm/chapter2/training_metrics.json
+  checkpoint_dir: models/lewm/chapter_2/checkpoints
+  metrics_path: models/lewm/chapter_2/training_metrics.json

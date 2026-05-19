@@ -18,6 +18,7 @@ if (-not (Test-Path $Python)) {
 
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $env:PYTHONPATH = "$root\ml_sidecar;$root\research\lewm"
+$env:LEWM_ACTION_DIM = "8"
 if ($Checkpoint -ne "") {
     $env:LEWM_CHECKPOINT = $Checkpoint
 }

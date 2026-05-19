@@ -12,9 +12,19 @@ var last_model_version := "rule-fallback"
 var last_confidence := 0.0
 var last_latency_ms := 0.0
 var last_error := ""
+var ml_mode := "auto"
+var min_ml_confidence := 0.55
+var max_ml_latency_ms := 95.0
 
 func configure(chapter: String, user_args: PackedStringArray) -> void:
 	chapter_id = chapter
+	for arg in user_args:
+		if arg.begins_with("--lewm-mode="):
+			ml_mode = arg.get_slice("=", 1)
+		elif arg.begins_with("--lewm-min-confidence="):
+			min_ml_confidence = clampf(float(arg.get_slice("=", 1)), 0.0, 1.0)
+		elif arg.begins_with("--lewm-max-latency-ms="):
+			max_ml_latency_ms = maxf(1.0, float(arg.get_slice("=", 1)))
 	client.configure(user_args)
 	client.start_session(chapter_id)
 
@@ -40,21 +50,38 @@ func _evaluate(api_chapter_id: String, observation: Dictionary, world_state: Wor
 	var reaction := client.predict_reaction(api_chapter_id, viewport, action_vector, observation, candidates)
 	var sanitized := _sanitize_reaction(api_chapter_id, reaction, candidates)
 	if not sanitized.is_empty():
-		_set_debug_from_reaction(sanitized)
-		_apply_ml_memory_effect(api_chapter_id, sanitized, world_state)
-		return sanitized
+		if _accept_ml_reaction(sanitized):
+			_set_debug_from_reaction(sanitized)
+			_apply_ml_memory_effect(api_chapter_id, sanitized, world_state)
+			return sanitized
+		last_error = "ml_gate:conf_%d_latency_%dms" % [
+			int(float(sanitized.get("confidence", 0.0)) * 100.0),
+			int(float(sanitized.get("latency_ms", client.last_latency_ms))),
+		]
 
 	var fallback_reaction: Dictionary = fallback_callable.call(observation, world_state)
 	fallback_reaction["source"] = "fallback"
 	fallback_reaction["confidence"] = 0.0
 	fallback_reaction["model_version"] = "rule-fallback"
 	fallback_reaction["latency_ms"] = client.last_latency_ms
+	var fallback_error := client.last_error
+	if fallback_error == "" and last_error != "":
+		fallback_error = last_error
 	last_source = "fallback"
 	last_model_version = "rule-fallback"
 	last_confidence = 0.0
 	last_latency_ms = client.last_latency_ms
-	last_error = client.last_error
+	last_error = fallback_error
 	return fallback_reaction
+
+func _accept_ml_reaction(reaction: Dictionary) -> bool:
+	if ml_mode == "fallback":
+		return false
+	if ml_mode == "ml":
+		return true
+	var confidence := float(reaction.get("confidence", 0.0))
+	var latency := float(reaction.get("latency_ms", client.last_latency_ms))
+	return confidence >= min_ml_confidence and latency <= max_ml_latency_ms
 
 func _sanitize_reaction(api_chapter_id: String, reaction: Dictionary, candidates: Array) -> Dictionary:
 	if reaction.is_empty():

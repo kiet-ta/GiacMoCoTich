@@ -10,7 +10,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 
 
-ACTION_DIM = 6
+ACTION_DIM = 8
 
 
 def action_to_vector(action: dict[str, Any]) -> torch.Tensor:
@@ -22,6 +22,8 @@ def action_to_vector(action: dict[str, Any]) -> torch.Tensor:
     values[3] = float(action.get("dash", 0.0))
     values[4] = float(action.get("weapon_id", 0.0)) / 2.0
     values[5] = float(action.get("boss_action_id", 0.0)) / 6.0
+    values[6] = float(action.get("aim_x", 0.0))
+    values[7] = float(action.get("aim_y", 0.0))
     return torch.from_numpy(values)
 
 
@@ -41,6 +43,7 @@ class ChapterTransitionDataset(Dataset):
         self.root = Path(root)
         self.image_size = image_size
         self.samples = self._discover_samples(max_transitions)
+        self.episode_to_indices = self._build_episode_index()
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -83,6 +86,25 @@ class ChapterTransitionDataset(Dataset):
         if not samples:
             raise ValueError(f"No transitions found under {episodes_dir}")
         return samples
+
+    def _build_episode_index(self) -> dict[str, list[int]]:
+        index: dict[str, list[int]] = {}
+        for sample_index, sample in enumerate(self.samples):
+            episode_dir: Path = sample["episode_dir"]
+            index.setdefault(episode_dir.name, []).append(sample_index)
+        return index
+
+    def episode_names(self) -> list[str]:
+        return sorted(self.episode_to_indices.keys())
+
+    def episode_counts(self) -> dict[str, int]:
+        return {name: len(self.episode_to_indices[name]) for name in self.episode_names()}
+
+    def indices_for_episodes(self, episode_names: list[str]) -> list[int]:
+        indices: list[int] = []
+        for name in episode_names:
+            indices.extend(self.episode_to_indices.get(name, []))
+        return sorted(indices)
 
 
 Chapter2TransitionDataset = ChapterTransitionDataset

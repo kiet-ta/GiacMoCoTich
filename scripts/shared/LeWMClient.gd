@@ -7,6 +7,7 @@ const DEFAULT_CAPTURE_SIZE := 128
 const RETRY_COOLDOWN_MS := 2000
 
 var enabled := true
+var force_ml := false
 var host := DEFAULT_HOST
 var port := DEFAULT_PORT
 var timeout_ms := DEFAULT_TIMEOUT_MS
@@ -17,7 +18,10 @@ var last_latency_ms := 0.0
 var disabled_until_msec := 0
 
 func configure(user_args: PackedStringArray) -> void:
+	force_ml = user_args.has("--lewm-force-ml")
 	enabled = not user_args.has("--lewm-no-ml")
+	if enabled and not force_ml and DisplayServer.get_name() == "headless":
+		enabled = false
 	for arg in user_args:
 		if arg.begins_with("--lewm-sidecar-host="):
 			host = arg.get_slice("=", 1)

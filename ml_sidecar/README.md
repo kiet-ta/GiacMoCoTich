@@ -32,6 +32,15 @@ Run Godot with ML enabled by default. To force fallback only:
 D:\Godot\godot.exe --path . -- --lewm-no-ml
 ```
 
+Runtime selection defaults to `--lewm-mode=auto`: Godot accepts ML only when
+the sidecar response passes confidence and latency gates, otherwise it uses
+the rule fallback. Use `--lewm-mode=ml` for forced ML review or
+`--lewm-mode=fallback` for baseline runs.
+
+Headless test runs disable ML requests by default to avoid noisy sidecar
+connection attempts. To test sidecar calls in headless mode, pass
+`--lewm-force-ml`.
+
 ## API
 
 - `GET /health`
@@ -46,5 +55,5 @@ scalar context, and candidate reactions. It returns one safe reaction with:
 intent, severity, effects, ui, confidence, model_version, latency_ms, source=ml
 ```
 
-Large data/checkpoints stay outside git under `data/lewm_raw/` and
+Large data/checkpoints stay outside git under `ml_data/lewm_raw/` and
 `models/lewm/`.

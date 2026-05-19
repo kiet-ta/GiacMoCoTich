@@ -316,7 +316,7 @@ The game must record raw visual experience.
 Recommended dataset layout:
 
 ```text
-data/lewm_raw/chapter2/
+ml_data/lewm_raw/chapter_2/
   episodes/
     ep_000001/
       frames/
@@ -637,37 +637,27 @@ This keeps the research system flexible:
 research/lewm/
   README.md
   configs/
-    collect_chapter2.yaml
     train_lewm_chapter2.yaml
     planner_chapter2.yaml
-  datasets/
-    chapter2_dataset.py
-  models/
-    encoder.py
-    action_encoder.py
-    predictor.py
-    lewm.py
-  losses/
-    prediction.py
-    gaussian_regularizer.py
-  planning/
-    cem.py
-    random_shooting.py
-    scoring.py
+  lewm/
+    datasets.py
+    diagnostics.py
+    losses.py
+    models.py
+    planning.py
   scripts/
+    inspect_dataset.py
     train.py
     evaluate.py
-    probe.py
     serve_sidecar.py
-  reports/
-    chapter2_baseline_report.md
 
-data/lewm_raw/chapter2/
+ml_data/lewm_raw/chapter_2/
   episodes/
 
-models/lewm/chapter2/
+models/lewm/chapter_2/
   checkpoints/
-  exported/
+  training_metrics.json
+  evaluation.json
 ```
 
 ## 22. Godot Additions
@@ -731,7 +721,7 @@ godot --path . -- --lewm-record --lewm-image-size=128 --lewm-capture-interval=0.
 The recorder writes one episode folder per run:
 
 ```text
-data/lewm_raw/chapter2/episodes/<episode_id>/
+ml_data/lewm_raw/chapter_2/episodes/<episode_id>/
   frames/
     000000.png
     000001.png
@@ -766,7 +756,8 @@ Evaluate a checkpoint:
 ```bash
 PYTHONPATH=research/lewm python3 research/lewm/scripts/evaluate.py \
   --config research/lewm/configs/train_lewm_chapter2.yaml \
-  --checkpoint models/lewm/chapter2/checkpoints/best.pt
+  --checkpoint models/lewm/chapter_2/checkpoints/best.pt \
+  --output models/lewm/chapter_2/evaluation.json
 ```
 
 ### Sidecar Scaffold
@@ -788,6 +779,7 @@ Raw captures and model checkpoints must not be committed. They may contain large
 The repository ignore rules cover:
 
 - `data/lewm_raw/`
+- `ml_data/`
 - `models/lewm/`
 - Python bytecode caches
 - local Codex/Godot runtime state

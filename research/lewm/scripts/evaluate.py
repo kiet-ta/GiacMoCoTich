@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from lewm.datasets import ChapterTransitionDataset  # noqa: E402
+from lewm.diagnostics import latent_diagnostics  # noqa: E402
 from lewm.losses import gaussian_regularizer, prediction_loss  # noqa: E402
 from lewm.models import LeWMModel  # noqa: E402
 
@@ -26,6 +27,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--checkpoint", required=True, type=Path)
+    parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -71,12 +73,13 @@ def main() -> None:
         "samples": count,
         "prediction_loss": total_pred / max(count, 1),
         "gaussian_regularizer": total_reg / max(count, 1),
-        "latent_mean_abs": float(latents.mean(dim=0).abs().mean().item()),
-        "latent_variance_mean": float(latents.var(dim=0).mean().item()),
-        "latent_variance_min": float(latents.var(dim=0).min().item()),
-        "latent_variance_max": float(latents.var(dim=0).max().item()),
+        "latent": latent_diagnostics(latents),
     }
-    print(json.dumps(report, indent=2))
+    text = json.dumps(report, indent=2)
+    print(text)
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(text + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

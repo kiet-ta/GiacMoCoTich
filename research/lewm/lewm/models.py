@@ -26,7 +26,7 @@ class ConvEncoder(nn.Module):
 
 
 class ActionEncoder(nn.Module):
-    def __init__(self, action_dim: int = 6, hidden_dim: int = 128) -> None:
+    def __init__(self, action_dim: int = 8, hidden_dim: int = 128) -> None:
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(action_dim, hidden_dim),
@@ -55,7 +55,7 @@ class LatentPredictor(nn.Module):
 
 
 class LeWMModel(nn.Module):
-    def __init__(self, action_dim: int = 6, latent_dim: int = 256, hidden_dim: int = 512) -> None:
+    def __init__(self, action_dim: int = 8, latent_dim: int = 256, hidden_dim: int = 512) -> None:
         super().__init__()
         self.encoder = ConvEncoder(latent_dim=latent_dim)
         self.action_encoder = ActionEncoder(action_dim=action_dim)

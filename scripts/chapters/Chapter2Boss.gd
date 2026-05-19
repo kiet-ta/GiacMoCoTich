@@ -66,11 +66,26 @@ var danger_spikes := 0
 var clue_read := false
 var trap_cleared := false
 var completion_emitted := false
+var current_player_action := {
+	"move_x": 0.0,
+	"move_y": 0.0,
+	"attack": 0,
+	"dash": 0,
+	"weapon_id": 0,
+	"aim_x": 1.0,
+	"aim_y": 0.0,
+}
+var scripted_collect := false
+var scripted_profile := "mixed"
+var scripted_duration_seconds := 0.0
+var scripted_rng := RandomNumberGenerator.new()
 
 func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	lewm.configure("chapter_2", OS.get_cmdline_user_args())
-	raw_recorder.configure("chapter_2", OS.get_cmdline_user_args())
+	var user_args := OS.get_cmdline_user_args()
+	_configure_scripted_collection(user_args)
+	lewm.configure("chapter_2", user_args)
+	raw_recorder.configure("chapter_2", user_args)
 	_reset_chapter()
 
 func _reset_chapter() -> void:
@@ -122,6 +137,15 @@ func _reset_chapter() -> void:
 	clue_read = false
 	trap_cleared = false
 	completion_emitted = false
+	current_player_action = {
+		"move_x": 0.0,
+		"move_y": 0.0,
+		"attack": 0,
+		"dash": 0,
+		"weapon_id": 0,
+		"aim_x": 1.0,
+		"aim_y": 0.0,
+	}
 	world_state.reset()
 	queue_redraw()
 
@@ -138,6 +162,7 @@ func _physics_process(delta: float) -> void:
 	invuln = maxf(0.0, invuln - delta)
 	boss_attack_cd = maxf(0.0, boss_attack_cd - delta)
 
+	current_player_action = _read_player_action()
 	_update_weapon_switch()
 	_update_player(delta)
 	_update_projectiles(delta)
@@ -155,6 +180,8 @@ func _physics_process(delta: float) -> void:
 		_reset_chapter()
 	if boss_hp <= 0.0:
 		_complete_chapter()
+	if scripted_collect and scripted_duration_seconds > 0.0 and elapsed >= scripted_duration_seconds:
+		get_tree().quit()
 
 	queue_redraw()
 
@@ -199,29 +226,139 @@ func get_completion_payload() -> Dictionary:
 func get_debug_text() -> String:
 	return "%s | tactic:%s pressure:%d | %s" % [world_state.debug_summary(), boss_tactic, int(arena_pressure), lewm.debug_summary()]
 
+func _configure_scripted_collection(user_args: PackedStringArray) -> void:
+	scripted_collect = user_args.has("--lewm-scripted") or user_args.has("--lewm-bot")
+	scripted_profile = "mixed"
+	var seed := 42
+	for arg in user_args:
+		if arg.begins_with("--lewm-scripted-profile="):
+			scripted_profile = arg.get_slice("=", 1)
+		elif arg.begins_with("--lewm-scripted-duration="):
+			scripted_duration_seconds = maxf(0.0, float(arg.get_slice("=", 1)))
+		elif arg.begins_with("--lewm-seed="):
+			seed = int(arg.get_slice("=", 1))
+	scripted_rng.seed = seed
+
+func _read_player_action() -> Dictionary:
+	if scripted_collect:
+		return _scripted_player_action()
+	return _human_player_action()
+
+func _human_player_action() -> Dictionary:
+	var move := Vector2.ZERO
+	if Input.is_key_pressed(KEY_A):
+		move.x -= 1.0
+	if Input.is_key_pressed(KEY_D):
+		move.x += 1.0
+	if Input.is_key_pressed(KEY_W):
+		move.y -= 1.0
+	if Input.is_key_pressed(KEY_S):
+		move.y += 1.0
+	move = move.normalized()
+
+	var weapon_id := 0 if current_weapon == "axe" else 1
+	if Input.is_key_pressed(KEY_1):
+		weapon_id = 0
+	elif Input.is_key_pressed(KEY_2):
+		weapon_id = 1
+
+	var aim := player_pos.direction_to(get_global_mouse_position())
+	if aim == Vector2.ZERO:
+		aim = player_facing
+	return {
+		"move_x": move.x,
+		"move_y": move.y,
+		"attack": 1 if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) else 0,
+		"dash": 1 if Input.is_key_pressed(KEY_SPACE) or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) else 0,
+		"weapon_id": weapon_id,
+		"aim_x": aim.x,
+		"aim_y": aim.y,
+	}
+
+func _scripted_player_action() -> Dictionary:
+	var profile := _current_scripted_profile()
+	var target := Vector2(430, 320)
+	var weapon_id := 0
+	var attack := 0
+	var dash := 0
+
+	if arena_started:
+		match profile:
+			"melee_spam":
+				target = boss_pos - boss_pos.direction_to(player_pos) * 42.0
+				weapon_id = 0
+				attack = 1 if player_pos.distance_to(boss_pos) < 86.0 else 0
+				dash = 1 if dash_cd <= 0.0 and player_pos.distance_to(boss_pos) > 155.0 else 0
+			"kite_bow":
+				var away := boss_pos.direction_to(player_pos)
+				if away == Vector2.ZERO:
+					away = Vector2.RIGHT.rotated(elapsed)
+				target = player_pos + (away + Vector2(-away.y, away.x) * 0.65).normalized() * 90.0
+				target.x = clampf(target.x, ARENA.position.x + 42.0, ARENA.end.x - 42.0)
+				target.y = clampf(target.y, ARENA.position.y + 42.0, ARENA.end.y - 42.0)
+				weapon_id = 1
+				attack = 1
+				dash = 1 if dash_cd <= 0.0 and player_pos.distance_to(boss_pos) < 142.0 else 0
+			"corner_hold":
+				target = Vector2(ARENA.end.x - 50.0, ARENA.position.y + 50.0)
+				weapon_id = 1
+				attack = 1
+				dash = 1 if dash_cd <= 0.0 and fmod(elapsed, 2.2) < 0.12 else 0
+			"switch_bait":
+				target = boss_pos + Vector2(sin(elapsed * 1.7), cos(elapsed * 1.3)) * 112.0
+				target.x = clampf(target.x, ARENA.position.x + 44.0, ARENA.end.x - 44.0)
+				target.y = clampf(target.y, ARENA.position.y + 44.0, ARENA.end.y - 44.0)
+				weapon_id = 0 if int(elapsed * 1.6) % 2 == 0 else 1
+				attack = 1 if attack_cd <= 0.03 else 0
+				dash = 1 if dash_cd <= 0.0 and int(elapsed * 2.0) % 5 == 0 else 0
+			_:
+				target = boss_pos + Vector2(sin(elapsed), cos(elapsed * 0.8)) * 96.0
+				weapon_id = 1
+				attack = 1
+
+	var move := player_pos.direction_to(target)
+	if player_pos.distance_to(target) < 18.0:
+		move = Vector2.ZERO
+	var aim := player_pos.direction_to(boss_pos)
+	if aim == Vector2.ZERO:
+		aim = Vector2.RIGHT
+	return {
+		"move_x": move.x,
+		"move_y": move.y,
+		"attack": attack,
+		"dash": dash,
+		"weapon_id": weapon_id,
+		"aim_x": aim.x,
+		"aim_y": aim.y,
+	}
+
+func _current_scripted_profile() -> String:
+	if not scripted_collect:
+		return "human"
+	if scripted_profile != "mixed":
+		return scripted_profile
+	var profiles := ["melee_spam", "kite_bow", "corner_hold", "switch_bait"]
+	return profiles[int(elapsed / 8.0) % profiles.size()]
+
 func _update_weapon_switch() -> void:
 	var previous := current_weapon
-	if Input.is_key_pressed(KEY_1):
+	var weapon_id := int(current_player_action.get("weapon_id", 0))
+	if weapon_id == 0:
 		current_weapon = "axe"
-	elif Input.is_key_pressed(KEY_2):
+	elif weapon_id == 1:
 		current_weapon = "bow"
 	if previous != current_weapon:
 		weapon_switches_in_window += 1
 
 func _update_player(delta: float) -> void:
-	var input := Vector2.ZERO
-	if Input.is_key_pressed(KEY_W):
-		input.y -= 1.0
-	if Input.is_key_pressed(KEY_S):
-		input.y += 1.0
-	if Input.is_key_pressed(KEY_A):
-		input.x -= 1.0
-	if Input.is_key_pressed(KEY_D):
-		input.x += 1.0
+	var input := Vector2(
+		float(current_player_action.get("move_x", 0.0)),
+		float(current_player_action.get("move_y", 0.0))
+	)
 	input = input.normalized()
 
 	var speed := player_speed
-	if (Input.is_key_pressed(KEY_SPACE) or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)) and dash_cd <= 0.0 and input != Vector2.ZERO:
+	if int(current_player_action.get("dash", 0)) == 1 and dash_cd <= 0.0 and input != Vector2.ZERO:
 		speed = 520.0
 		dash_cd = 0.55
 		invuln = 0.18
@@ -249,7 +386,7 @@ func _update_player(delta: float) -> void:
 			trap_cleared = true
 			whisper = "Bay da duoc ne qua an toan."
 
-	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and attack_cd <= 0.0:
+	if int(current_player_action.get("attack", 0)) == 1 and attack_cd <= 0.0:
 		_attack()
 
 func _attack() -> void:
@@ -261,7 +398,10 @@ func _attack() -> void:
 	else:
 		attack_cd = 0.24
 		bow_shots_in_window += 1
-		var direction := player_pos.direction_to(get_global_mouse_position())
+		var direction := Vector2(
+			float(current_player_action.get("aim_x", 0.0)),
+			float(current_player_action.get("aim_y", 0.0))
+		).normalized()
 		if direction == Vector2.ZERO:
 			direction = Vector2.RIGHT
 		projectiles.append({
@@ -522,28 +662,17 @@ func _record_raw_lewm_transition(delta: float) -> void:
 	raw_recorder.record(get_viewport(), delta, _current_raw_lewm_action(), _current_raw_lewm_metadata())
 
 func _current_raw_lewm_action() -> Dictionary:
-	var move_x := 0.0
-	var move_y := 0.0
-	if Input.is_key_pressed(KEY_A):
-		move_x -= 1.0
-	if Input.is_key_pressed(KEY_D):
-		move_x += 1.0
-	if Input.is_key_pressed(KEY_W):
-		move_y -= 1.0
-	if Input.is_key_pressed(KEY_S):
-		move_y += 1.0
-	return {
-		"move_x": move_x,
-		"move_y": move_y,
-		"attack": 1 if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) else 0,
-		"dash": 1 if invuln > 0.0 else 0,
-		"weapon_id": 0 if current_weapon == "axe" else 1,
-		"boss_action_id": _boss_action_id(),
-	}
+	var action := current_player_action.duplicate(true)
+	action["boss_action_id"] = _boss_action_id()
+	action["record_source"] = "scripted" if scripted_collect else "human"
+	action["scripted_profile"] = _current_scripted_profile()
+	return action
 
 func _current_raw_lewm_metadata() -> Dictionary:
 	return {
 		"elapsed": elapsed,
+		"record_source": "scripted" if scripted_collect else "human",
+		"scripted_profile": _current_scripted_profile(),
 		"player_hp": maxf(player_hp, 0.0),
 		"boss_hp": maxf(boss_hp, 0.0),
 		"distance_to_boss": player_pos.distance_to(boss_pos),
@@ -586,6 +715,8 @@ func _current_raw_lewm_action_vector() -> Array:
 		float(action.get("dash", 0.0)),
 		float(action.get("weapon_id", 0.0)) / 2.0,
 		float(action.get("boss_action_id", 0.0)) / 6.0,
+		float(action.get("aim_x", 0.0)),
+		float(action.get("aim_y", 0.0)),
 	]
 
 func _complete_chapter() -> void:

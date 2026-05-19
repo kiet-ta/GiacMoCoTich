@@ -28,7 +28,7 @@ class LeWMSidecarRunner:
     def __init__(self) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.image_size = int(os.getenv("LEWM_IMAGE_SIZE", "128"))
-        self.action_dim = int(os.getenv("LEWM_ACTION_DIM", "6"))
+        self.action_dim = int(os.getenv("LEWM_ACTION_DIM", "8"))
         self.latent_dim = int(os.getenv("LEWM_LATENT_DIM", "256"))
         self.model = LeWMModel(action_dim=self.action_dim, latent_dim=self.latent_dim).to(self.device)
         self.model.eval()
@@ -41,8 +41,21 @@ class LeWMSidecarRunner:
 
     def _load_checkpoint(self, checkpoint: Path) -> None:
         state = torch.load(checkpoint, map_location=self.device)
+        model_cfg = state.get("config", {}).get("model", {})
+        action_dim = int(model_cfg.get("action_dim", self.action_dim))
+        latent_dim = int(model_cfg.get("latent_dim", self.latent_dim))
+        hidden_dim = int(model_cfg.get("hidden_dim", 512))
+        if action_dim != self.action_dim or latent_dim != self.latent_dim:
+            self.action_dim = action_dim
+            self.latent_dim = latent_dim
+            self.model = LeWMModel(
+                action_dim=self.action_dim,
+                latent_dim=self.latent_dim,
+                hidden_dim=hidden_dim,
+            ).to(self.device)
         model_state = state.get("model", state)
         self.model.load_state_dict(model_state, strict=False)
+        self.model.eval()
         self.model_loaded = True
         self.model_version = f"lewm-local:{checkpoint.name}"
 
