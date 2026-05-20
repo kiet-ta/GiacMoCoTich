@@ -340,6 +340,8 @@ Key metrics:
 | `latent_variance_min` | Very low dimensions may be inactive |
 | `latent_effective_rank` | Higher means more latent directions carry useful variation |
 
+Use `lewm_training_quality_gates.md` for concrete smoke/review/research thresholds and common failure modes. Do not use `total_loss` alone as a quality claim because it includes the weighted Gaussian regularizer.
+
 ## 11. Runtime Selection
 
 The runtime does not blindly trust ML. It uses `LeWMOrchestrator` as a gate.

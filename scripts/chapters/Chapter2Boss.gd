@@ -252,20 +252,20 @@ func _read_player_action() -> Dictionary:
 
 func _human_player_action() -> Dictionary:
 	var move := Vector2.ZERO
-	if Input.is_key_pressed(KEY_A):
+	if Input.is_physical_key_pressed(KEY_A):
 		move.x -= 1.0
-	if Input.is_key_pressed(KEY_D):
+	if Input.is_physical_key_pressed(KEY_D):
 		move.x += 1.0
-	if Input.is_key_pressed(KEY_W):
+	if Input.is_physical_key_pressed(KEY_W):
 		move.y -= 1.0
-	if Input.is_key_pressed(KEY_S):
+	if Input.is_physical_key_pressed(KEY_S):
 		move.y += 1.0
 	move = move.normalized()
 
 	var weapon_id := 0 if current_weapon == "axe" else 1
-	if Input.is_key_pressed(KEY_1):
+	if Input.is_physical_key_pressed(KEY_1):
 		weapon_id = 0
-	elif Input.is_key_pressed(KEY_2):
+	elif Input.is_physical_key_pressed(KEY_2):
 		weapon_id = 1
 
 	var aim := player_pos.direction_to(get_global_mouse_position())
@@ -275,7 +275,7 @@ func _human_player_action() -> Dictionary:
 		"move_x": move.x,
 		"move_y": move.y,
 		"attack": 1 if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) else 0,
-		"dash": 1 if Input.is_key_pressed(KEY_SPACE) or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) else 0,
+		"dash": 1 if Input.is_physical_key_pressed(KEY_SPACE) or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) else 0,
 		"weapon_id": weapon_id,
 		"aim_x": aim.x,
 		"aim_y": aim.y,

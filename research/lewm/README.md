@@ -1,6 +1,6 @@
 # Raw-Pixel LeWorldModel Research Stack
 
-This folder is the first implementation slice for the full raw-pixel LeWorldModel roadmap described in `docs/leworldmodel_research_textbook_v1.md`.
+This folder is the first implementation slice for the full raw-pixel LeWorldModel roadmap described in `docs/lewm/leworldmodel_research_textbook_v1.md`.
 
 The goal is to train a reconstruction-free JEPA-style world model from Godot Chapter 2 frame/action transitions:
 
@@ -58,6 +58,12 @@ move_x, move_y, attack, dash, weapon_id/2, boss_action_id/6, aim_x, aim_y
 ```
 
 ## Quick Commands
+
+Full human collection and training cycle:
+
+```bash
+bash ./tools/run_lewm_human_training_cycle.sh --chapter chapter_2 --godot-bin godot
+```
 
 Collect scripted Chapter 2 data:
 
