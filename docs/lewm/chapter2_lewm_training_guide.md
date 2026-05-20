@@ -9,7 +9,7 @@ flowchart LR
     A["Setup Python venv"] --> B["Record Chapter 2 rollouts"]
     B --> C["ml_data/lewm_raw/chapter_2/episodes"]
     C --> D["Train JEPA-style LeWM"]
-    D --> E["models/lewm/chapter2/checkpoints/best.pt"]
+    D --> E["models/lewm/chapter_2/checkpoints/best.pt"]
     E --> F["Start localhost sidecar"]
     F --> G["Godot LeWMClient"]
     G --> H["LeWMOrchestrator guardrail"]
@@ -28,8 +28,10 @@ Chapter 2 records the most complete action dictionary:
 - `dash`
 - `weapon_id`
 - `boss_action_id`
+- `aim_x`
+- `aim_y`
 
-These fields map directly to the 6-dimensional vector in `research/lewm/lewm/datasets.py`, so this chapter is the safest first target for real training.
+These fields map directly to the 8-dimensional vector in `research/lewm/lewm/datasets.py`, so this chapter is the safest first target for real training.
 
 ## Prerequisites
 
@@ -105,21 +107,52 @@ Run:
 powershell -ExecutionPolicy Bypass -File .\tools\train_lewm_chapter.ps1 -Chapter chapter_2
 ```
 
+Or run the full human collection and training cycle with one command:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run_lewm_human_training_cycle.ps1 -Chapter chapter_2
+```
+
+Linux/macOS equivalent:
+
+```bash
+bash ./tools/run_lewm_human_training_cycle.sh --chapter chapter_2 --godot-bin godot
+```
+
+If this is the first Linux run, create a Linux virtualenv and install dependencies first:
+
+```bash
+python3 -m venv .venv
+. ./.venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r ./ml_sidecar/requirements.txt
+```
+
+If your Godot binary is not named `godot`, pass the executable path:
+
+```bash
+bash ./tools/run_lewm_human_training_cycle.sh --chapter chapter_2 --godot-bin /path/to/Godot_v4.x-stable_linux.x86_64
+```
+
+These wrappers open Godot with raw LeWM recording enabled, wait until you close the game window, then run dataset inspection, training, evaluation, benchmark, sidecar restart, and health check.
+
 Outputs:
 
 ```text
-models/lewm/chapter2/checkpoints/latest.pt
-models/lewm/chapter2/checkpoints/best.pt
-models/lewm/chapter2/training_metrics.json
+models/lewm/chapter_2/checkpoints/latest.pt
+models/lewm/chapter_2/checkpoints/best.pt
+models/lewm/chapter_2/training_metrics.json
 ```
 
 Watch the printed JSON rows. `val_loss` should generally trend down. Small fluctuations are normal.
+
+For pass/fail thresholds, collapse checks, latency gates, and research benchmark requirements, use `lewm_training_quality_gates.md`.
 
 ## Evaluate
 
 ```powershell
 $env:PYTHONPATH="$PWD\research\lewm"
-.\.venv\Scripts\python .\research\lewm\scripts\evaluate.py --config .\research\lewm\configs\train_lewm_chapter2.yaml --checkpoint .\models\lewm\chapter2\checkpoints\best.pt
+.\.venv\Scripts\python .\research\lewm\scripts\evaluate.py --config .\research\lewm\configs\train_lewm_chapter2.yaml --checkpoint .\models\lewm\chapter_2\checkpoints\best.pt
 ```
 
 Check:
@@ -134,7 +167,7 @@ Check:
 Start the local sidecar with the trained checkpoint:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\start_lewm_sidecar.ps1 -Checkpoint .\models\lewm\chapter2\checkpoints\best.pt
+powershell -ExecutionPolicy Bypass -File .\tools\start_lewm_sidecar.ps1 -Checkpoint .\models\lewm\chapter_2\checkpoints\best.pt
 ```
 
 Health check:
@@ -208,7 +241,7 @@ Re-run Godot with `--lewm-record`, enter Chapter 2, and play long enough to capt
 Start the sidecar with:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\start_lewm_sidecar.ps1 -Checkpoint .\models\lewm\chapter2\checkpoints\best.pt
+powershell -ExecutionPolicy Bypass -File .\tools\start_lewm_sidecar.ps1 -Checkpoint .\models\lewm\chapter_2\checkpoints\best.pt
 ```
 
 ### Godot still uses fallback

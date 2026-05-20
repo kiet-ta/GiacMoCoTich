@@ -19,6 +19,7 @@ D:\Godot\godot.exe --path . -- --lewm-no-ml
 ## LeWorldModel sidecar
 
 The MVP sidecar lives in `ml_sidecar/` and uses the JEPA-style PyTorch model code in `research/lewm/`.
+The LeWM documentation entry point is `docs/lewm/README.md`.
 
 Install Python 3.10 and dependencies, then start:
 

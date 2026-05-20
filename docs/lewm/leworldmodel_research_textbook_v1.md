@@ -681,8 +681,8 @@ Implemented files:
 
 | Area | Path | Purpose |
 |---|---|---|
-| Textbook report | `docs/leworldmodel_research_textbook_v1.md` | Consolidated research foundation and implementation contract |
-| Applied runtime explainer | `docs/chapter2_lewm_applied_runtime_explainer.md` | Explains the current rule-based Chapter 2 LeWM layer |
+| Textbook report | `leworldmodel_research_textbook_v1.md` | Consolidated research foundation and implementation contract |
+| Applied runtime explainer | `chapter2_lewm_applied_runtime_explainer.md` | Explains the current rule-based Chapter 2 LeWM layer |
 | Godot recorder | `scripts/shared/RawLeWMRecorder.gd` | Opt-in raw frame, action, and metadata recorder |
 | Chapter 2 integration | `scripts/chapters/Chapter2Boss.gd` | Calls the recorder during active boss arena play |
 | Research package | `research/lewm/lewm/` | Dataset, model, loss, and planner code |
@@ -941,11 +941,11 @@ The full research implementation is complete when:
 - Mermaid.js repository: <https://github.com/mermaid-js/mermaid>
 - Mermaid.js releases: <https://github.com/mermaid-js/mermaid/releases>
 - Current project docs consolidated into this file:
-  - `docs/leworldmodel_application.md`
-  - `docs/chapter2_lewm_applied_runtime_explainer.md`
-  - `docs/chapter2_lewm_training_approach.md`
-  - `docs/ai_foundations_for_plan.md`
-  - `docs/implementation_and_applied_knowledge.md`
+  - `leworldmodel_application.md`
+  - `chapter2_lewm_applied_runtime_explainer.md`
+  - `chapter2_lewm_training_approach.md`
+  - `ai_foundations_for_plan.md`
+  - `implementation_and_applied_knowledge.md`
 
 ---
 
