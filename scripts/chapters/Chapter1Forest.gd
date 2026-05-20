@@ -124,13 +124,13 @@ func get_debug_text() -> String:
 
 func _update_player(delta: float) -> void:
 	var input := Vector2.ZERO
-	if Input.is_key_pressed(KEY_W):
+	if Input.is_physical_key_pressed(KEY_W):
 		input.y -= 1.0
-	if Input.is_key_pressed(KEY_S):
+	if Input.is_physical_key_pressed(KEY_S):
 		input.y += 1.0
-	if Input.is_key_pressed(KEY_A):
+	if Input.is_physical_key_pressed(KEY_A):
 		input.x -= 1.0
-	if Input.is_key_pressed(KEY_D):
+	if Input.is_physical_key_pressed(KEY_D):
 		input.x += 1.0
 	input = input.normalized()
 
@@ -152,7 +152,7 @@ func _update_player(delta: float) -> void:
 		ly_thong_visible = true
 		whisper = "Co nguoi dang di vao Rung Mong."
 
-	if Input.is_key_pressed(KEY_E):
+	if Input.is_physical_key_pressed(KEY_E):
 		_try_interact()
 
 func _try_interact() -> void:
@@ -253,18 +253,18 @@ func _global_memory_delta() -> Dictionary:
 func _current_lewm_action_vector() -> Array:
 	var move_x := 0.0
 	var move_y := 0.0
-	if Input.is_key_pressed(KEY_A):
+	if Input.is_physical_key_pressed(KEY_A):
 		move_x -= 1.0
-	if Input.is_key_pressed(KEY_D):
+	if Input.is_physical_key_pressed(KEY_D):
 		move_x += 1.0
-	if Input.is_key_pressed(KEY_W):
+	if Input.is_physical_key_pressed(KEY_W):
 		move_y -= 1.0
-	if Input.is_key_pressed(KEY_S):
+	if Input.is_physical_key_pressed(KEY_S):
 		move_y += 1.0
 	return [
 		move_x,
 		move_y,
-		1.0 if Input.is_key_pressed(KEY_E) else 0.0,
+		1.0 if Input.is_physical_key_pressed(KEY_E) else 0.0,
 		float(explored_objects.size()) / 3.0,
 		1.0 if ly_thong_following else 0.0,
 		clampf(player_pos.x / float(MAP_W * TILE), 0.0, 1.0),
@@ -274,7 +274,7 @@ func _record_raw_lewm_transition(delta: float) -> void:
 	raw_recorder.record(get_viewport(), delta, {
 		"move_x": _current_lewm_action_vector()[0],
 		"move_y": _current_lewm_action_vector()[1],
-		"interact": 1 if Input.is_key_pressed(KEY_E) else 0,
+		"interact": 1 if Input.is_physical_key_pressed(KEY_E) else 0,
 		"clues_found": explored_objects.size(),
 		"ly_thong_following": 1 if ly_thong_following else 0,
 		"lewm_intent_id": _forest_intent_id(lewm_intent),

@@ -53,23 +53,24 @@ var hud_bars_signature := ""
 var hud_chips_signature := ""
 
 func _ready() -> void:
+	DisplayServer.window_set_ime_active(false)
 	progress_service.load_progress()
 	_create_ui_layer()
 	_show_menu()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_ESCAPE:
+		if event.physical_keycode == KEY_ESCAPE:
 			_show_menu()
-		elif event.keycode == KEY_F1:
+		elif event.physical_keycode == KEY_F1:
 			_try_start_chapter(0)
-		elif event.keycode == KEY_F2:
+		elif event.physical_keycode == KEY_F2:
 			_try_start_chapter(1)
-		elif event.keycode == KEY_F3:
+		elif event.physical_keycode == KEY_F3:
 			_try_start_chapter(2)
-		elif event.keycode == KEY_R and current_index >= 0:
+		elif event.physical_keycode == KEY_R and current_index >= 0:
 			_try_start_chapter(current_index)
-		elif event.keycode == KEY_F9:
+		elif event.physical_keycode == KEY_F9:
 			debug_visible = not debug_visible
 			debug_label.visible = debug_visible
 
