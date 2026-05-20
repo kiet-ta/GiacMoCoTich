@@ -18,6 +18,7 @@ const CORNER_READ_MARGIN := 76.0
 var world_state := WorldState.new()
 var lewm := LeWMOrchestrator.new()
 var raw_recorder := RawLeWMRecorder.new()
+var audio_director: Node = null
 var player_pos := Vector2(150, 330)
 var player_hp := PLAYER_MAX_HP
 var player_speed := 165.0
@@ -60,6 +61,7 @@ var lewm_impact_log: Array[String] = []
 var lewm_tactic_counts := {}
 var lewm_read_counts := {}
 var lewm_primary_read := "balanced"
+var last_lewm_audio_intent := ""
 var repeated_tactic_windows := 0
 var elapsed := 0.0
 var danger_spikes := 0
@@ -87,6 +89,9 @@ func _ready() -> void:
 	lewm.configure("chapter_2", user_args)
 	raw_recorder.configure("chapter_2", user_args)
 	_reset_chapter()
+
+func set_audio_director(director: Node) -> void:
+	audio_director = director
 
 func _reset_chapter() -> void:
 	player_pos = Vector2(150, 330)
@@ -131,6 +136,7 @@ func _reset_chapter() -> void:
 	lewm_tactic_counts.clear()
 	lewm_read_counts.clear()
 	lewm_primary_read = "balanced"
+	last_lewm_audio_intent = ""
 	repeated_tactic_windows = 0
 	elapsed = 0.0
 	danger_spikes = 0
@@ -349,6 +355,7 @@ func _update_weapon_switch() -> void:
 		current_weapon = "bow"
 	if previous != current_weapon:
 		weapon_switches_in_window += 1
+		_play_audio_event("weapon_switch")
 
 func _update_player(delta: float) -> void:
 	var input := Vector2(
@@ -363,6 +370,7 @@ func _update_player(delta: float) -> void:
 		dash_cd = 0.55
 		invuln = 0.18
 		dash_count_in_window += 1
+		_play_audio_event("dash")
 		if arena_started and telegraphs.is_empty() and boss_attack_cd <= 0.35:
 			early_dash_count_in_window += 1
 
@@ -393,11 +401,14 @@ func _attack() -> void:
 	attacks_in_window += 1
 	if current_weapon == "axe":
 		attack_cd = 0.38
+		_play_audio_event("axe")
 		if arena_started and player_pos.distance_to(boss_pos) < 76.0:
 			boss_hp -= 18.0
+			_play_audio_event("hit")
 	else:
 		attack_cd = 0.24
 		bow_shots_in_window += 1
+		_play_audio_event("bow")
 		var direction := Vector2(
 			float(current_player_action.get("aim_x", 0.0)),
 			float(current_player_action.get("aim_y", 0.0))
@@ -422,6 +433,7 @@ func _update_projectiles(delta: float) -> void:
 		if String(p["owner"]) == "player" and arena_started and Vector2(p["pos"]).distance_to(boss_pos) < 24.0:
 			boss_hp -= float(p["damage"])
 			bow_hits_in_window += 1
+			_play_audio_event("hit")
 			projectiles.remove_at(i)
 			continue
 		if String(p["owner"]) == "boss" and Vector2(p["pos"]).distance_to(player_pos) < 18.0:
@@ -461,6 +473,7 @@ func _update_arena_start() -> void:
 		arena_started = true
 		player_pos = Vector2(470, 320)
 		whisper = "Dau truong dong lai. Boss dang doc tung thao tac."
+		_play_audio_event("arena_start")
 
 func _update_lewm_window(delta: float) -> void:
 	if _player_is_in_corner():
@@ -532,6 +545,11 @@ func _apply_lewm_reaction(reaction: Dictionary) -> void:
 	if behavior_read != "" and behavior_read != "balanced":
 		lewm_read_counts[behavior_read] = int(lewm_read_counts.get(behavior_read, 0)) + 1
 		lewm_primary_read = _dominant_key(lewm_read_counts, "balanced")
+	if lewm_intent != "BalancedPressure" and lewm_intent != last_lewm_audio_intent:
+		last_lewm_audio_intent = lewm_intent
+		_play_audio_event("lewm_shift")
+	elif lewm_intent == "BalancedPressure":
+		last_lewm_audio_intent = ""
 	_remember_impact(reaction)
 
 func _remember_impact(reaction: Dictionary) -> void:
@@ -615,6 +633,7 @@ func _damage_player(amount: float) -> void:
 	player_hp -= applied
 	damage_taken_in_window += applied
 	invuln = 0.35
+	_play_audio_event("damage")
 
 func _spawn_hazard_telegraph(pos: Vector2, radius: float, ttl: float, kind: String) -> void:
 	var damage := 0.0
@@ -629,6 +648,7 @@ func _spawn_hazard_telegraph(pos: Vector2, radius: float, ttl: float, kind: Stri
 		"kind": kind,
 		"damage": damage,
 	})
+	_play_audio_event("boss_telegraph")
 
 func _spawn_hazard(pos: Vector2, radius := 46.0) -> void:
 	hazards.append({
@@ -636,6 +656,7 @@ func _spawn_hazard(pos: Vector2, radius := 46.0) -> void:
 		"radius": radius,
 		"ttl": 2.2,
 	})
+	_play_audio_event("hazard")
 
 func _spawn_area_deny_telegraph() -> void:
 	var pos := player_pos + Vector2(randf_range(-52.0, 52.0), randf_range(-52.0, 52.0))
@@ -867,3 +888,7 @@ func _draw_ui() -> void:
 		draw_rect(Rect2(420, 24, 520, 20), Color(0.12, 0.02, 0.03))
 		draw_rect(Rect2(420, 24, 520.0 * maxf(boss_hp, 0.0) / BOSS_MAX_HP, 20), Color(0.86, 0.10, 0.08))
 		draw_string(ThemeDB.fallback_font, Vector2(420, 20), "Chan Tinh", HORIZONTAL_ALIGNMENT_LEFT, 120, 16, Color.WHITE)
+
+func _play_audio_event(event_name: String) -> void:
+	if audio_director != null:
+		audio_director.play_event(event_name)

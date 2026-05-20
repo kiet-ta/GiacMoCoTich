@@ -2,6 +2,7 @@ extends Node2D
 
 const ProgressService = preload("res://scripts/shared/ProgressService.gd")
 const ChapterScoreCalculator = preload("res://scripts/shared/ChapterScoreCalculator.gd")
+const AudioDirector = preload("res://scripts/shared/AudioDirector.gd")
 
 const CHAPTERS := [
 	{
@@ -29,6 +30,7 @@ const CHAPTERS := [
 
 var progress_service := ProgressService.new()
 var score_calculator := ChapterScoreCalculator.new()
+var audio_director: Node = null
 
 var current_chapter: Node = null
 var current_index := -1
@@ -54,12 +56,15 @@ var hud_chips_signature := ""
 
 func _ready() -> void:
 	progress_service.load_progress()
+	_create_audio_director()
 	_create_ui_layer()
 	_show_menu()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
+			if audio_director != null:
+				audio_director.play_ui_back()
 			_show_menu()
 		elif event.keycode == KEY_F1:
 			_try_start_chapter(0)
@@ -84,6 +89,10 @@ func _create_ui_layer() -> void:
 	ui_layer = CanvasLayer.new()
 	add_child(ui_layer)
 	_create_hud()
+
+func _create_audio_director() -> void:
+	audio_director = AudioDirector.new()
+	add_child(audio_director)
 
 func _create_hud() -> void:
 	hud = Control.new()
@@ -179,6 +188,8 @@ func _show_menu() -> void:
 	current_index = -1
 	hud.visible = false
 	_clear_completion_overlay()
+	if audio_director != null:
+		audio_director.play_menu_music()
 
 	if menu != null:
 		menu.queue_free()
@@ -290,11 +301,18 @@ func _create_chapter_card(index: int) -> Control:
 func _try_start_chapter(index: int) -> void:
 	var chapter_id := String(CHAPTERS[index]["id"])
 	if not progress_service.is_unlocked(chapter_id):
+		if audio_director != null:
+			audio_director.play_locked()
 		_show_menu_notice("Man nay dang khoa. Hay hoan thanh man truoc.")
 		return
 	_start_chapter(index)
 
 func _start_chapter(index: int) -> void:
+	var chapter_id := String(CHAPTERS[index]["id"])
+	if audio_director != null:
+		audio_director.play_ui_accept()
+		audio_director.play_chapter_start()
+		audio_director.play_chapter_music(chapter_id)
 	if menu != null:
 		menu.queue_free()
 		menu = null
@@ -304,6 +322,8 @@ func _start_chapter(index: int) -> void:
 	current_index = index
 	current_chapter = CHAPTERS[index]["scene"].instantiate()
 	add_child(current_chapter)
+	if current_chapter.has_method("set_audio_director"):
+		current_chapter.set_audio_director(audio_director)
 	if current_chapter.has_method("apply_global_memory"):
 		current_chapter.apply_global_memory(progress_service.get_global_memory())
 	hud.visible = true
@@ -349,15 +369,24 @@ func _update_hud() -> void:
 		debug_label.text = String(current_chapter.get_debug_text())
 	else:
 		debug_label.text = ""
+	if audio_director != null and audio_director.has_method("get_audio_summary"):
+		debug_label.text = "%s | %s" % [debug_label.text, String(audio_director.get_audio_summary())]
 
 func _current_payload() -> Dictionary:
 	if current_chapter != null and current_chapter.has_method("get_completion_payload"):
 		return current_chapter.get_completion_payload()
 	return {"time_seconds": 0.0}
 
+func get_audio_debug_data() -> Dictionary:
+	if audio_director != null and audio_director.has_method("get_audio_debug_data"):
+		return audio_director.get_audio_debug_data()
+	return {}
+
 func _on_chapter_completed(chapter_id: String, payload: Dictionary) -> void:
 	if current_chapter != null:
 		current_chapter.process_mode = Node.PROCESS_MODE_DISABLED
+	if audio_director != null:
+		audio_director.play_completion()
 	var score := score_calculator.calculate(chapter_id, payload)
 	var progress_result := progress_service.record_result(chapter_id, score, payload)
 	_show_completion_overlay(chapter_id, payload, score, String(progress_result.get("next_unlocked", "")))
@@ -448,7 +477,11 @@ func _show_completion_overlay(chapter_id: String, payload: Dictionary, score: Di
 	var back := Button.new()
 	back.text = "Ve chon man"
 	back.custom_minimum_size = Vector2(140, 42)
-	back.pressed.connect(_show_menu)
+	back.pressed.connect(func() -> void:
+		if audio_director != null:
+			audio_director.play_ui_back()
+		_show_menu()
+	)
 	buttons.add_child(back)
 
 func _clear_completion_overlay() -> void:

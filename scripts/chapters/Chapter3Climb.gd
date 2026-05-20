@@ -15,6 +15,7 @@ const GRAVITY := 760.0
 var world_state := WorldState.new()
 var lewm := LeWMOrchestrator.new()
 var raw_recorder := RawLeWMRecorder.new()
+var audio_director: Node = null
 var player_pos := Vector2(130, 820)
 var player_vel := Vector2.ZERO
 var grounded := false
@@ -45,6 +46,7 @@ var lewm_model_version := "rule-fallback"
 var lewm_confidence := 0.0
 var lewm_latency_ms := 0.0
 var lewm_impact_log: Array[String] = []
+var last_lewm_audio_intent := ""
 var elapsed := 0.0
 var completion_emitted := false
 
@@ -53,6 +55,9 @@ func _ready() -> void:
 	raw_recorder.configure("chapter_3", OS.get_cmdline_user_args())
 	_build_platforms()
 	queue_redraw()
+
+func set_audio_director(director: Node) -> void:
+	audio_director = director
 
 func _physics_process(delta: float) -> void:
 	elapsed += delta
@@ -117,6 +122,8 @@ func _update_charge_and_jump(delta: float) -> void:
 	var space_pressed := Input.is_key_pressed(KEY_SPACE)
 
 	if grounded and space_pressed:
+		if not charging:
+			_play_audio_event("charge_start")
 		charging = true
 		charge = clampf(charge + delta * 0.9, 0.0, 1.0)
 
@@ -131,6 +138,7 @@ func _update_charge_and_jump(delta: float) -> void:
 		grounded = false
 		charging = false
 		charge = 0.0
+		_play_audio_event("jump")
 
 	if not space_pressed and grounded and not charging:
 		charge = 0.0
@@ -162,7 +170,8 @@ func _update_movement(delta: float) -> void:
 	player_pos += player_vel * delta
 	player_pos.x = clampf(player_pos.x, 36.0, 920.0)
 
-	_resolve_platform_collision(previous_pos)
+	var was_grounded := grounded
+	_resolve_platform_collision(previous_pos, was_grounded)
 
 	if player_pos.y > LEVEL_BOTTOM + 160.0:
 		player_pos = Vector2(130, 820)
@@ -171,6 +180,7 @@ func _update_movement(delta: float) -> void:
 		fall_count += 1
 		_track_fall_zone()
 		whisper = "Roi ve chan nui. Khong co checkpoint trong giac mo nay."
+		_play_audio_event("fall")
 
 	if player_pos.y < LEVEL_TOP + 120.0:
 		_complete_chapter()
@@ -181,7 +191,7 @@ func _complete_chapter() -> void:
 	completion_emitted = true
 	chapter_completed.emit("chapter_3", get_completion_payload())
 
-func _resolve_platform_collision(previous_pos: Vector2) -> void:
+func _resolve_platform_collision(previous_pos: Vector2, was_grounded: bool) -> void:
 	grounded = false
 	var player_rect := _player_rect(player_pos)
 	var previous_rect := _player_rect(previous_pos)
@@ -198,6 +208,8 @@ func _resolve_platform_collision(previous_pos: Vector2) -> void:
 			player_pos.y = platform.position.y - PLAYER_SIZE.y * 0.5
 			player_vel.y = 0.0
 			grounded = true
+			if not was_grounded:
+				_play_audio_event("land")
 			if falling:
 				var fall_distance := player_pos.y - fall_start_y
 				if fall_distance > 180.0:
@@ -205,6 +217,7 @@ func _resolve_platform_collision(previous_pos: Vector2) -> void:
 					_track_fall_zone()
 					world_state.add_value("climb_confidence", -5.0)
 					whisper = "Nui khong tha thu cu nhay sai luc."
+					_play_audio_event("fall")
 				falling = false
 			return
 
@@ -240,13 +253,20 @@ func _apply_lewm_reaction(reaction: Dictionary) -> void:
 	lewm_latency_ms = float(reaction.get("latency_ms", 0.0))
 	if absf(wind_target) > 2.0 and absf(previous_target - wind_target) > 4.0:
 		wind_warning_ttl = 2.0
+		_play_audio_event("wind")
 	if bool(reaction["ghost_platform"]):
 		ghost_platform_ttl = 5.0
+		_play_audio_event("reveal")
 	if bool(reaction.get("trajectory_echo", false)):
 		trajectory_echo_ttl = 4.0
 	var ui: Dictionary = reaction.get("ui", {})
 	if String(ui.get("whisper", "")) != "":
 		whisper = ui["whisper"]
+	if lewm_intent != "MountainStillness" and lewm_intent != last_lewm_audio_intent:
+		last_lewm_audio_intent = lewm_intent
+		_play_audio_event("lewm_shift")
+	elif lewm_intent == "MountainStillness":
+		last_lewm_audio_intent = ""
 	_remember_impact(reaction)
 
 func _remember_impact(reaction: Dictionary) -> void:
@@ -439,3 +459,7 @@ func _draw_ui() -> void:
 	if whisper != "":
 		draw_rect(Rect2(24, 548, 760, 36), Color(0.0, 0.0, 0.0, 0.52))
 		draw_string(ThemeDB.fallback_font, Vector2(36, 572), whisper, HORIZONTAL_ALIGNMENT_LEFT, 720, 15, Color(0.88, 0.95, 1.0))
+
+func _play_audio_event(event_name: String) -> void:
+	if audio_director != null:
+		audio_director.play_event(event_name)

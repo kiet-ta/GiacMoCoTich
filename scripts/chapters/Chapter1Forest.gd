@@ -16,6 +16,7 @@ const PLAYER_RADIUS := 11.0
 var world_state := WorldState.new()
 var lewm := LeWMOrchestrator.new()
 var raw_recorder := RawLeWMRecorder.new()
+var audio_director: Node = null
 var player_pos := Vector2(120, 320)
 var player_start := player_pos
 var player_speed := 135.0
@@ -46,6 +47,7 @@ var lewm_model_version := "rule-fallback"
 var lewm_confidence := 0.0
 var lewm_latency_ms := 0.0
 var lewm_impact_log: Array[String] = []
+var last_lewm_audio_intent := ""
 var solids: Array[Rect2] = []
 var interactables: Array[Dictionary] = []
 var exit_rect := Rect2(880, 280, 48, 96)
@@ -58,6 +60,9 @@ func _ready() -> void:
 	_build_map_collision()
 	_build_interactables()
 	queue_redraw()
+
+func set_audio_director(director: Node) -> void:
+	audio_director = director
 
 func _physics_process(delta: float) -> void:
 	elapsed += delta
@@ -151,6 +156,7 @@ func _update_player(delta: float) -> void:
 	if not ly_thong_visible and (moved_distance > 130.0 or elapsed > 7.0):
 		ly_thong_visible = true
 		whisper = "Co nguoi dang di vao Rung Mong."
+		_play_audio_event("reveal")
 
 	if Input.is_key_pressed(KEY_E):
 		_try_interact()
@@ -161,6 +167,7 @@ func _try_interact() -> void:
 			explored_objects[item["id"]] = true
 			world_state.add_value(item["state"], item["delta"])
 			whisper = item["text"]
+			_play_audio_event("clue_found")
 			return
 
 	if ly_thong_visible and player_pos.distance_to(ly_thong_pos) < 58.0 and not ly_thong_dialogue_done:
@@ -168,6 +175,7 @@ func _try_interact() -> void:
 		ly_thong_following = true
 		world_state.add_value("trust_ly_thong", 10.0)
 		whisper = "Ly Thong: Di voi huynh, rung nay khong nen o lai lau."
+		_play_audio_event("dialogue")
 
 func _update_ly_thong(delta: float) -> void:
 	if not ly_thong_visible:
@@ -229,7 +237,16 @@ func _apply_lewm_reaction(reaction: Dictionary) -> void:
 		path_shift_alpha = 1.0
 	reverse_leaf_intensity = maxf(reverse_leaf_intensity, float(reaction.get("reverse_leaves", 0.0)))
 	exit_guidance = maxf(exit_guidance, float(reaction.get("exit_guidance", 0.0)))
+	if lewm_intent != "ForestCalm" and lewm_intent != last_lewm_audio_intent:
+		last_lewm_audio_intent = lewm_intent
+		_play_audio_event("lewm_shift")
+	elif lewm_intent == "ForestCalm":
+		last_lewm_audio_intent = ""
 	_remember_impact(reaction)
+
+func _play_audio_event(event_name: String) -> void:
+	if audio_director != null:
+		audio_director.play_event(event_name)
 
 func _remember_impact(reaction: Dictionary) -> void:
 	var intent := String(reaction.get("intent", ""))
