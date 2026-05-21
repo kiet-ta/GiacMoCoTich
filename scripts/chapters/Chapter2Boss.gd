@@ -12,6 +12,7 @@ const ARENA := Rect2(420, 64, 520, 520)
 const PREP_AREA := Rect2(48, 64, 320, 520)
 const PLAYER_MAX_HP := 100.0
 const BOSS_MAX_HP := 360.0
+const DASH_COOLDOWN := 0.55
 const LEWM_WINDOW_SECONDS := 3.0
 const CORNER_READ_MARGIN := 76.0
 
@@ -215,6 +216,14 @@ func get_hud_data() -> Dictionary:
 		"bars": _hud_bars(prep_done),
 	}
 
+func get_player_combat_hud_data() -> Dictionary:
+	return {
+		"health": maxf(player_hp, 0.0),
+		"health_max": PLAYER_MAX_HP,
+		"dash_ready_ratio": _dash_ready_ratio(),
+		"dash_ready": _dash_ready_ratio() >= 0.999,
+	}
+
 func get_completion_payload() -> Dictionary:
 	return {
 		"time_seconds": elapsed,
@@ -367,7 +376,7 @@ func _update_player(delta: float) -> void:
 	var speed := player_speed
 	if int(current_player_action.get("dash", 0)) == 1 and dash_cd <= 0.0 and input != Vector2.ZERO:
 		speed = 520.0
-		dash_cd = 0.55
+		dash_cd = DASH_COOLDOWN
 		invuln = 0.18
 		dash_count_in_window += 1
 		_play_audio_event("dash")
@@ -765,8 +774,6 @@ func _boss_tactic_text() -> String:
 
 func _hud_bars(prep_done: int) -> Array:
 	var bars := [
-		{"label": "HP Thach Sanh", "value": maxf(player_hp, 0.0), "max": PLAYER_MAX_HP, "color": Color(0.38, 0.84, 0.42)},
-		{"label": "Dash", "value": clampf((0.55 - dash_cd) / 0.55 * 100.0, 0.0, 100.0), "max": 100.0, "color": Color(0.45, 0.72, 1.0)},
 		{"label": "LeWM danger", "value": lewm_severity, "max": 100.0, "color": Color(1.0, 0.62, 0.22)},
 	]
 	if arena_started:
@@ -785,6 +792,7 @@ func _draw() -> void:
 	_draw_player()
 	if arena_started:
 		_draw_boss()
+	_draw_combat_hud()
 
 func _draw_map() -> void:
 	draw_rect(Rect2(0, 0, 1000, 640), Color(0.08, 0.08, 0.10))
@@ -871,6 +879,61 @@ func _draw_boss_world_hp() -> void:
 	draw_rect(bar, Color(0.08, 0.02, 0.03, 0.92))
 	draw_rect(Rect2(bar.position, Vector2(bar.size.x * maxf(boss_hp, 0.0) / BOSS_MAX_HP, bar.size.y)), Color(0.92, 0.12, 0.08))
 	draw_rect(bar, Color(0.98, 0.44, 0.36), false, 1.0)
+
+func _draw_combat_hud() -> void:
+	var hud_data := get_player_combat_hud_data()
+	var panel := Rect2(20, 108, 304, 88)
+	draw_rect(panel, Color(0.025, 0.025, 0.030, 0.82))
+	draw_rect(panel, Color(0.80, 0.56, 0.24, 0.86), false, 2.0)
+	draw_rect(Rect2(panel.position, Vector2(5, panel.size.y)), Color(0.88, 0.16, 0.10, 0.92))
+
+	draw_string(ThemeDB.fallback_font, panel.position + Vector2(18, 21), "THACH SANH", HORIZONTAL_ALIGNMENT_LEFT, 132, 13, Color(1.0, 0.86, 0.48))
+	draw_string(
+		ThemeDB.fallback_font,
+		panel.position + Vector2(198, 21),
+		"HP %d/%d" % [int(float(hud_data.get("health", 0.0))), int(float(hud_data.get("health_max", PLAYER_MAX_HP)))],
+		HORIZONTAL_ALIGNMENT_RIGHT,
+		84,
+		13,
+		Color(0.98, 0.94, 0.86)
+	)
+
+	var hp_ratio := clampf(float(hud_data.get("health", 0.0)) / maxf(1.0, float(hud_data.get("health_max", PLAYER_MAX_HP))), 0.0, 1.0)
+	var hp_fill := Color(0.84, 0.11, 0.08)
+	if hp_ratio <= 0.30:
+		var pulse := 0.5 + sin(elapsed * 10.0) * 0.5
+		hp_fill = Color(0.92, 0.08, 0.04).lerp(Color(1.0, 0.58, 0.24), pulse)
+	_draw_combat_bar(Rect2(panel.position + Vector2(18, 32), Vector2(264, 16)), hp_ratio, hp_fill, Color(0.16, 0.03, 0.02, 0.94), true)
+
+	var dash_ratio := float(hud_data.get("dash_ready_ratio", 0.0))
+	var dash_ready := bool(hud_data.get("dash_ready", false))
+	var dash_label := "DASH READY" if dash_ready else "DASH %d%%" % int(dash_ratio * 100.0)
+	var dash_color := Color(0.28, 0.62, 1.0).lerp(Color(0.72, 0.94, 1.0), dash_ratio)
+	if dash_ready:
+		var ready_pulse := 0.5 + sin(elapsed * 7.0) * 0.5
+		dash_color = Color(0.48, 0.80, 1.0).lerp(Color(0.84, 0.98, 1.0), ready_pulse)
+	draw_string(ThemeDB.fallback_font, panel.position + Vector2(18, 66), dash_label, HORIZONTAL_ALIGNMENT_LEFT, 150, 12, dash_color)
+	_draw_dash_chevrons(panel.position + Vector2(226, 61), dash_color if dash_ready else Color(0.36, 0.52, 0.68, 0.82))
+	_draw_combat_bar(Rect2(panel.position + Vector2(18, 74), Vector2(264, 10)), dash_ratio, dash_color, Color(0.02, 0.07, 0.12, 0.94), false)
+
+func _draw_combat_bar(rect: Rect2, ratio: float, fill: Color, bg: Color, draw_ticks: bool) -> void:
+	var safe_ratio := clampf(ratio, 0.0, 1.0)
+	draw_rect(rect, bg)
+	draw_rect(Rect2(rect.position, Vector2(rect.size.x * safe_ratio, rect.size.y)), fill)
+	draw_rect(rect, Color(0.98, 0.86, 0.54, 0.68), false, 1.0)
+	if draw_ticks:
+		for i in range(1, 4):
+			var tick_x := rect.position.x + rect.size.x * float(i) / 4.0
+			draw_line(Vector2(tick_x, rect.position.y + 1.0), Vector2(tick_x, rect.end.y - 1.0), Color(1.0, 0.90, 0.70, 0.40), 1.0)
+
+func _draw_dash_chevrons(origin: Vector2, color: Color) -> void:
+	for i in range(3):
+		var x := origin.x + i * 15.0
+		draw_line(Vector2(x, origin.y), Vector2(x + 8.0, origin.y + 5.0), color, 2.0)
+		draw_line(Vector2(x + 8.0, origin.y + 5.0), Vector2(x, origin.y + 10.0), color, 2.0)
+
+func _dash_ready_ratio() -> float:
+	return clampf((DASH_COOLDOWN - dash_cd) / DASH_COOLDOWN, 0.0, 1.0)
 
 func _draw_world_label(pos: Vector2, text: String, color: Color) -> void:
 	var width := maxf(42.0, text.length() * 8.0)

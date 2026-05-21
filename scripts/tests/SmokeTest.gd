@@ -26,6 +26,7 @@ func _run() -> void:
 	failures += _test_lewm_orchestrator_fallback_contracts()
 	failures += _test_lewm_orchestrator_fake_ml_contract()
 	failures += _test_chapter_1_exit_completion()
+	failures += _test_chapter_2_player_hud_contract()
 
 	for scene_path in SCENE_PATHS:
 		var packed := load(scene_path)
@@ -114,6 +115,50 @@ func _test_chapter_1_exit_completion() -> int:
 
 	if not bool(completed[0]):
 		push_error("Chapter 1 should complete when player reaches EXIT with Ly Thong following nearby.")
+		return 1
+
+	return 0
+
+func _test_chapter_2_player_hud_contract() -> int:
+	var packed := load("res://scenes/Chapter2Boss.tscn")
+	if packed == null:
+		push_error("Failed to load Chapter 2 scene for HUD contract test.")
+		return 1
+
+	var node: Node = packed.instantiate()
+	root.add_child(node)
+
+	var hud_data: Dictionary = node.get_hud_data()
+	var bars: Array = hud_data.get("bars", [])
+	var bars_by_label := {}
+	for bar in bars:
+		if bar is Dictionary:
+			bars_by_label[String(bar.get("label", ""))] = bar
+
+	if bars_by_label.has("Mau Thach Sanh"):
+		node.queue_free()
+		push_error("Chapter 2 shared HUD should not duplicate the player health bar.")
+		return 1
+	if bars_by_label.has("Dash"):
+		node.queue_free()
+		push_error("Chapter 2 shared HUD should not duplicate the player dash bar.")
+		return 1
+	if not bars_by_label.has("LeWM danger"):
+		node.queue_free()
+		push_error("Chapter 2 shared HUD should keep non-player status bars.")
+		return 1
+	if not node.has_method("get_player_combat_hud_data"):
+		node.queue_free()
+		push_error("Chapter 2 must expose player combat HUD data for its scene HUD.")
+		return 1
+
+	var combat_hud: Dictionary = node.get_player_combat_hud_data()
+	node.queue_free()
+	if int(float(combat_hud.get("health_max", 0.0))) != 100:
+		push_error("Chapter 2 combat HUD should use the player max HP.")
+		return 1
+	if float(combat_hud.get("dash_ready_ratio", -1.0)) < 0.99:
+		push_error("Chapter 2 combat HUD dash should start ready.")
 		return 1
 
 	return 0
